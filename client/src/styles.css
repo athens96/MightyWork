@@ -743,3 +743,34 @@ mark { background: color-mix(in srgb, var(--wait) 35%, transparent); color: inhe
 .index-tags .tag { border: 1px solid var(--line); background: var(--card-raised); }
 .nowrap { white-space: nowrap; }
 .is-deprecated .index-title, .tree a.is-deprecated span { text-decoration: line-through; color: var(--ink3); }
+
+/* 로컬 그래프 (MightyCode 다이어그램 캔버스: 점 격자 + 블록) */
+.local-graph { margin-top: 32px; padding-top: 16px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; }
+.local-graph + .connections { margin-top: 18px; border-top: none; padding-top: 0; }
+.local-graph h3 { font-size: 12px; font-weight: 700; color: var(--ink2); }
+.graph-canvas {
+  border: 1px solid var(--line); border-radius: var(--r-block); overflow: hidden;
+  background-color: var(--page); background-image: radial-gradient(circle, var(--line) 1px, transparent 1.2px); background-size: 18px 18px;
+}
+.graph-canvas svg { display: block; width: 100%; height: auto; }
+.g-edge { stroke: color-mix(in srgb, var(--ink2) 45%, transparent); stroke-width: 1.5; transition: opacity var(--quick) var(--ease); }
+.g-edge.mention { stroke: color-mix(in srgb, var(--run) 60%, transparent); stroke-dasharray: 5 4; }
+.g-edge.parent { stroke-dasharray: 1.5 4; stroke-linecap: round; }
+.g-node { cursor: pointer; transition: opacity var(--quick) var(--ease); }
+.g-node.center { cursor: default; }
+.g-node.wiki circle { fill: var(--card); stroke: var(--accent); stroke-width: 2; }
+.g-node.wiki.center circle { fill: var(--accent); stroke: var(--accent-soft); stroke-width: 5; }
+.g-node.wiki.deprecated circle { stroke: var(--ink3); stroke-dasharray: 3 2; }
+.g-node.task rect { stroke: var(--card); stroke-width: 2; }
+.g-node:hover circle, .g-node:hover rect { filter: drop-shadow(0 0 4px color-mix(in srgb, var(--accent) 60%, transparent)); }
+.g-node text { font-size: 11px; fill: var(--ink2); font-family: var(--font-body); paint-order: stroke; stroke: var(--page); stroke-width: 3px; }
+.g-node.center text { font-size: 12.5px; font-weight: 700; fill: var(--ink); }
+.graph-legend { display: flex; flex-wrap: wrap; gap: 12px; padding: 6px 10px; border-top: 1px solid var(--line); background: var(--card); font-size: 11px; color: var(--ink2); }
+.graph-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.graph-legend i { display: inline-block; }
+.lg-wiki { width: 9px; height: 9px; border-radius: 50%; border: 2px solid var(--accent); background: var(--card); }
+.lg-task { width: 9px; height: 9px; border-radius: 3px; background: var(--run); }
+.lg-line { width: 18px; height: 0; border-top: 1.5px solid color-mix(in srgb, var(--ink2) 45%, transparent); }
+.lg-line.lg-mention { border-top: 1.5px dashed color-mix(in srgb, var(--run) 60%, transparent); }
+.lg-line.lg-parent { border-top: 2px dotted color-mix(in srgb, var(--ink2) 45%, transparent); }
+.graph-empty { font-size: 12px; }

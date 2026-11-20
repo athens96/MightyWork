@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { membersApi, wikiApi } from "../../api";
 import { ApiError } from "../../api/http";
-import type { PageLinks, UnlinkedMention, User, WikiPage as WikiPageType, WikiPageSummary } from "../../types";
+import type { LocalGraph, PageLinks, UnlinkedMention, User, WikiPage as WikiPageType, WikiPageSummary } from "../../types";
+import { LocalGraphView } from "./LocalGraphView";
 import { PropertiesBar, PropertiesEditor } from "./pageProps";
 import { WikiIndex } from "./WikiIndex";
 import { useCurrentProject } from "../projects/ProjectLayout";
@@ -30,6 +31,8 @@ export function WikiPage() {
   const [members, setMembers] = useState<User[]>([]);
   const [aliasDraft, setAliasDraft] = useState("");
   const [mentions, setMentions] = useState<UnlinkedMention[]>([]);
+  const [graph, setGraph] = useState<LocalGraph | null>(null);
+  const [graphDepth, setGraphDepth] = useState<1 | 2>(1);
   const [links, setLinks] = useState<PageLinks | null>(null);
 
   const reloadTree = useCallback(() => wikiApi.list(project.id).then(setPages), [project.id]);
@@ -83,12 +86,14 @@ export function WikiPage() {
       Promise.all([
         wikiApi.links(project.id, id).then(setLinks, () => setLinks(null)),
         wikiApi.unlinkedMentions(project.id, id).then(setMentions, () => setMentions([])),
+        wikiApi.graph(project.id, id, graphDepth).then(setGraph, () => setGraph(null)),
       ]),
-    [project.id],
+    [project.id, graphDepth],
   );
   useEffect(() => {
     setLinks(null);
     setMentions([]);
+    setGraph(null);
     if (pageId) reloadLinks(pageId);
   }, [pageId, reloadLinks]);
 
@@ -218,6 +223,22 @@ export function WikiPage() {
                 <Markdown links={resolver}>{page.content}</Markdown>
               ) : (
                 <p className="muted">내용 없음{canEdit && " — 편집을 눌러 작성하세요."}</p>
+              )}
+              {graph && (
+                <section className="local-graph">
+                  <header className="section-head">
+                    <h3>로컬 그래프</h3>
+                    <span className="spacer" />
+                    <div className="segment">
+                      {([1, 2] as const).map((d) => (
+                        <button key={d} aria-pressed={graphDepth === d} onClick={() => setGraphDepth(d)}>
+                          {d}단계
+                        </button>
+                      ))}
+                    </div>
+                  </header>
+                  <LocalGraphView graph={graph} projectId={project.id} basePath={basePath} />
+                </section>
               )}
               {links && (
                 <Connections

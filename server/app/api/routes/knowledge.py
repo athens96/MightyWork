@@ -23,6 +23,7 @@ from app.services.links import (
     project_pages,
     task_numbers,
 )
+from app.services.graph import LocalGraph, local_graph
 from app.services.search import SearchHit, search
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["knowledge"])
@@ -147,3 +148,10 @@ def link_unlinked_mentions(project: ProjectDep, page_id: str, body: LinkMentions
         linked += n
         documents += 1 if n else 0
     return LinkMentionsResult(linked=linked, documents=documents)
+
+
+@router.get("/wiki/pages/{page_id}/graph", response_model=LocalGraph)
+def page_graph(project: ProjectDep, page_id: str, db: DbDep, depth: int = Query(1, ge=1, le=2)) -> LocalGraph:
+    """이 문서를 중심으로 한 로컬 그래프 (위키·일감, 1~2단계)."""
+    page = _page_or_404(db, project, page_id)
+    return local_graph(db, project, f"wiki:{page.id}", depth)

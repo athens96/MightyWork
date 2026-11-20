@@ -19,6 +19,10 @@
 - 페이지 제목을 바꾸면 다른 위키와 일감 설명의 `[[옛 제목]]` 이 자동으로 새 제목으로 바뀐다.
 - 프로젝트 검색(헤더 검색창, ⌘K): 일감(제목·레이블·설명·할 일·덧글)과 위키(제목·본문). `MW-12` 처럼 키로 찾으면 해당 일감이 맨 위.
 - 링크는 같은 프로젝트 안에서만 연결된다(권한 격리). 판정 규칙은 `server/app/services/links.py` 와 `client/src/lib/wikilinks.ts` 가 같다.
+- **별칭**: 페이지마다 다른 이름(예: SSO)을 붙이면 `[[SSO]]` 링크·백링크·검색에 함께 쓰인다.
+- **링크 안 된 언급**: 다른 위키·일감 설명에서 제목/별칭이 링크 없이 적힌 곳을 찾아 보여주고, 편집 권한이 있으면 한 번에 `[[링크]]` 로 바꾼다 (옵시디언 Unlinked mentions).
+- **Properties**: 위키 페이지에 타입(가이드·명세·결정·회의록·참고·메모)·상태(초안·검토 중·확정·폐기)·담당자·태그. 위키 첫 화면의 문서 목록에서 이 값들로 거른다 (옵시디언 Bases).
+- **로컬 그래프**: 문서를 중심으로 1~2단계 이웃(위키·일감)과 링크·일감 언급·상하위 관계를 그린다. 노드를 누르면 이동.
 
 일감 필드 (JIRA/Linear 스타일): 제목, 설명(Markdown), 상태(파이프라인 단계), 우선순위, 작업자, 보고자,
 시작일·종료일(시작일 ≤ 종료일), 추정치(pt), 레이블, 할 일 체크리스트, 덧글(Markdown), 변경 이력.
@@ -48,6 +52,7 @@ server/
     services/access.py   # 프로젝트 권한 계산(소유자/멤버)
     services/links.py    # [[링크]]·일감 키 파싱, 백링크, 제목 변경 전파
     services/search.py   # 프로젝트 검색 (SQLite 전환 시 FTS5 로 교체)
+    services/graph.py    # 로컬 그래프 (위키·일감 간선, BFS)
     api/deps.py          # 의존성: 현재 사용자, 현재 프로젝트, DB, PATCH 헬퍼
     api/routes/          # auth, users, projects, members, tasks, comments, wiki, knowledge
   tests/                 # pytest (구글 검증기는 가짜로 대체)
@@ -83,8 +88,11 @@ client/
 | GET | `/projects/{pid}/tasks/{id}/activity` | 변경 이력(생성, 상태·작업자·날짜 등) |
 | GET | `/projects/{pid}/tasks/{id}/wiki-refs` | 이 일감 키를 언급한 위키 |
 | GET | `/projects/{pid}/wiki/pages/{id}/links` | 링크한 문서 · 백링크 · 언급한 일감 |
+| GET | `/projects/{pid}/wiki/pages/{id}/unlinked-mentions` | 링크 안 된 언급 목록 |
+| POST | `/projects/{pid}/wiki/pages/{id}/unlinked-mentions/link` | 선택한 문서의 언급을 `[[링크]]` 로 변환 (편집) |
+| GET | `/projects/{pid}/wiki/pages/{id}/graph?depth=1\|2` | 로컬 그래프 (노드·간선) |
 | GET | `/projects/{pid}/search?q=` | 일감 + 위키 검색 (점수순) |
-| GET/POST | `/projects/{pid}/wiki/pages` | 페이지 트리(본문 제외) / 생성 |
+| GET/POST | `/projects/{pid}/wiki/pages` | 페이지 목록(본문 제외, `?page_type=&status=&tag=&owner_id=` 필터) / 생성 |
 | GET/PATCH/DELETE | `/projects/{pid}/wiki/pages/{id}` | 조회 / 수정·이동 / 삭제(하위 페이지 있으면 409) |
 
 서버 실행 후 `http://localhost:8000/docs` 에서 Swagger UI 확인 가능.
@@ -125,6 +133,6 @@ npm run dev                 # http://localhost:5174 (/api 는 8000 으로 프록
 
 ## 다음 단계 후보
 - 일감: 드래그앤드롭, 하위 일감/일감 간 링크, 일감↔위키 링크, 첨부 파일, @멘션·알림
-- 위키: `[[` 입력 시 자동완성, 링크 없이 제목만 언급된 곳 제안, 버전 히스토리
+- 위키: `[[` 입력 시 자동완성, 버전 히스토리, 전체 그래프 뷰
 - 지식화: 프로젝트 용어집(동의어·상하위) → 고정 스키마 엔티티/관계 추출(리뷰 큐) → 그래프 기반 Q&A
 - 권한: 초대 메일 발송, 소유권 이전, 감사 로그

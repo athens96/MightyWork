@@ -140,3 +140,37 @@ def test_link_mentions_requires_edit(app, auth_client, pid):
     url = f"/api/projects/{pid}/wiki/pages/{target['id']}/unlinked-mentions"
     assert bob.get(url).status_code == 200  # 보기는 가능
     assert bob.post(f"{url}/link", json={"sources": [{"source_type": "wiki", "source_id": src["id"]}]}).status_code == 403
+
+
+# ---------------------------------------------------------------- 로컬 그래프
+
+def test_local_graph_depth_and_edge_kinds(auth_client, pid):
+    t1 = auth_client.post(f"/api/projects/{pid}/tasks", json={"title": "구현", "description": "[[설계]] 참고, 선행 MW-2"}).json()  # MW-1
+    t2 = auth_client.post(f"/api/projects/{pid}/tasks", json={"title": "스펙"}).json()  # MW-2
+    design = page(auth_client, pid, "설계", "규칙은 [[규칙]], 진행 MW-1")
+    rules = page(auth_client, pid, "규칙", "세부는 [[세부 규칙]]")
+    detail = page(auth_client, pid, "세부 규칙", "", parent_id=rules["id"])
+    page(auth_client, pid, "고립", "연결 없음")
+
+    g1 = auth_client.get(f"/api/projects/{pid}/wiki/pages/{design['id']}/graph").json()
+    assert g1["center"] == f"wiki:{design['id']}"
+    by_depth = {n["label"]: n["depth"] for n in g1["nodes"]}
+    assert by_depth == {"설계": 0, "규칙": 1, "구현": 1}  # 1단계: 링크한 문서 + 언급한 일감(+일감이 링크해 온 것)
+    kinds = {(e["source"], e["target"], e["kind"]) for e in g1["edges"]}
+    assert (f"wiki:{design['id']}", f"wiki:{rules['id']}", "link") in kinds
+    assert (f"wiki:{design['id']}", f"task:{t1['id']}", "mention") in kinds
+    assert (f"task:{t1['id']}", f"wiki:{design['id']}", "link") in kinds
+
+    g2 = auth_client.get(f"/api/projects/{pid}/wiki/pages/{design['id']}/graph", params={"depth": 2}).json()
+    labels = {n["label"]: n for n in g2["nodes"]}
+    assert set(labels) == {"설계", "규칙", "구현", "세부 규칙", "스펙"}  # 고립 문서는 없음
+    assert labels["스펙"]["depth"] == 2 and labels["스펙"]["number"] == 2 and labels["스펙"]["status"] == "backlog"
+    assert (f"wiki:{detail['id']}", f"wiki:{rules['id']}", "parent") in {(e["source"], e["target"], e["kind"]) for e in g2["edges"]}
+    assert auth_client.get(f"/api/projects/{pid}/wiki/pages/{design['id']}/graph", params={"depth": 3}).status_code == 422
+    assert t2["id"]
+
+
+def test_graph_requires_membership(app, auth_client, pid):
+    p = page(auth_client, pid, "문서")
+    bob = login(app, "u2:bob@example.com")
+    assert bob.get(f"/api/projects/{pid}/wiki/pages/{p['id']}/graph").status_code == 404

@@ -150,6 +150,23 @@ export interface UnlinkedMention {
   snippets: string[];
 }
 
+export interface GraphNode {
+  id: string; // "wiki:<id>" | "task:<id>"
+  kind: "wiki" | "task";
+  ref_id: string;
+  label: string;
+  depth: number; // 중심 0
+  status: string | null; // 위키 상태 또는 일감 단계
+  number: number | null;
+}
+
+export interface LocalGraph {
+  center: string;
+  nodes: GraphNode[];
+  edges: { source: string; target: string; kind: "link" | "mention" | "parent" }[];
+  truncated: boolean;
+}
+
 export interface Comment {
   id: string;
   project_id: string;

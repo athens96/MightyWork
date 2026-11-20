@@ -2,6 +2,7 @@ import { http } from "./http";
 import type {
   Comment,
   Member,
+  LocalGraph,
   PageLinks,
   SearchHit,
   UnlinkedMention,
@@ -93,6 +94,8 @@ export const wikiApi = {
     http.patch<WikiPage>(`/projects/${projectId}/wiki/pages/${id}`, body),
   remove: (projectId: string, id: string) => http.delete(`/projects/${projectId}/wiki/pages/${id}`),
   links: (projectId: string, id: string) => http.get<PageLinks>(`/projects/${projectId}/wiki/pages/${id}/links`),
+  graph: (projectId: string, id: string, depth: 1 | 2) =>
+    http.get<LocalGraph>(`/projects/${projectId}/wiki/pages/${id}/graph?depth=${depth}`),
   unlinkedMentions: (projectId: string, id: string) =>
     http.get<UnlinkedMention[]>(`/projects/${projectId}/wiki/pages/${id}/unlinked-mentions`),
   linkMentions: (projectId: string, id: string, sources: Pick<UnlinkedMention, "source_type" | "source_id">[]) =>
