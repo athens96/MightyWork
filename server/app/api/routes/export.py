@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException, Query, Response, status
 
 from app.api.deps import DbDep, ProjectDep
 from app.services.export.archive import build_zip
+from app.services.export.docx import render_docx
 from app.services.export.html import render_html
 from app.services.export.markdown import render_markdown
 from app.services.export.prepare import collect, safe_filename
@@ -17,12 +18,14 @@ router = APIRouter(prefix="/projects/{project_id}/wiki", tags=["export"])
 class ExportFormat(str, Enum):
     md = "md"
     html = "html"
+    docx = "docx"
 
 
 MEDIA = {
     "md": "text/markdown; charset=utf-8",
     "html": "text/html; charset=utf-8",
     "zip": "application/zip",
+    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 }
 
 
@@ -53,6 +56,8 @@ def export_page(
     ext = format.value
     if format is ExportFormat.md:
         return download(render_markdown(db, project, blocks), safe_filename(page.title, ext), ext)
+    if format is ExportFormat.docx:
+        return download(render_docx(db, project, blocks), safe_filename(page.title, ext), ext)
     return download(render_html(db, project, blocks, print_on_load=print_dialog), safe_filename(page.title, ext), ext, inline=print_dialog)
 
 

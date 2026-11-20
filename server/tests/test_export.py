@@ -82,3 +82,29 @@ def test_export_requires_membership(app, auth_client, pid, tree):
     assert get(bob, pid, root["id"], format="html").status_code == 404
     assert bob.get(f"/api/projects/{pid}/wiki/export.zip").status_code == 404
     assert get(auth_client, pid, "nope", format="md").status_code == 404
+
+
+# ---------------------------------------------------------------- Word
+
+def test_docx_export(auth_client, pid, tree):
+    root, _ = tree
+    res = get(auth_client, pid, root["id"], format="docx", children=True)
+    assert res.status_code == 200 and res.headers["content-type"].endswith("wordprocessingml.document")
+    z = zipfile.ZipFile(io.BytesIO(res.content))
+    doc = z.read("word/document.xml").decode()
+    assert "개발 가이드" in doc and "코딩 규칙" in doc and "카멜케이스" in doc
+    assert "<w:tbl>" in doc  # 표 유지
+    assert "[[코딩 규칙]]" not in doc and "다른 것" in doc  # 위키 링크는 표시 텍스트로
+    assert "[[코드]]" in doc  # 코드 블록 안은 원문 유지
+    assert 'w:eastAsia="ko-KR"' in z.read("word/styles.xml").decode()  # 한글 기본 글꼴
+    assert unquote(res.headers["content-disposition"].split("''")[1]) == "개발 가이드.docx"
+
+
+def test_docx_sandbox_blocks_local_files(auth_client, pid, tmp_path):
+    secret = tmp_path / "secret.png"
+    secret.write_bytes(b"\x89PNG\r\n\x1a\nnot really")
+    p = page(auth_client, pid, "이미지", f"![x]({secret})\n\n![y](file://{secret})")
+    res = get(auth_client, pid, p["id"], format="docx")
+    assert res.status_code == 200
+    names = zipfile.ZipFile(io.BytesIO(res.content)).namelist()
+    assert not any(n.startswith("word/media/") for n in names)  # 서버 파일을 끌어오지 않음
