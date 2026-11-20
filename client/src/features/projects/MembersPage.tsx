@@ -1,37 +1,59 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { membersApi } from "../../api";
+import { membersApi, projectsApi } from "../../api";
 import { ApiError } from "../../api/http";
 import { useAuth } from "../../auth/AuthContext";
 import { Avatar } from "../../components/Avatar";
 import { PlusIcon, TrashIcon } from "../../components/icons";
 import { can, normalize, PERMISSION_HINT, PERMISSION_LABEL, PERMISSIONS, PRESETS } from "../../lib/permissions";
-import type { Member, Permission } from "../../types";
+import { timeAgo } from "../../lib/time";
+import type { AuditLog, Member, Permission } from "../../types";
 import { useCurrentProject } from "./ProjectLayout";
 import { useProjects } from "./ProjectsContext";
 
-/** 프로젝트 멤버·권한 관리 (변경은 관리자만) */
+const INVITE_STATUS_MSG: Record<string, string> = {
+  sent: "초대 메일을 발송했습니다.",
+  skipped_unconfigured: "멤버가 추가되었습니다 (SMTP 미설정으로 메일 발송은 건너뛰었습니다).",
+  failed: "멤버는 추가되었지만 초대 메일 발송에 실패했습니다.",
+};
+
+/** 프로젝트 멤버·권한 관리 + 초대 메일 재발송 + 소유권 이전 + 감사 로그(관리자 전용) */
 export function MembersPage() {
   const project = useCurrentProject();
   const { reload: reloadProjects } = useProjects();
   const { user: me } = useAuth();
   const isAdmin = can(project, "admin");
   const [members, setMembers] = useState<Member[]>([]);
+  const [logs, setLogs] = useState<AuditLog[]>([]);
+  const [logFilter, setLogFilter] = useState("");
+  const [tab, setTab] = useState<"members" | "audit">("members");
   const [email, setEmail] = useState("");
   const [preset, setPreset] = useState(1);
+  const [sendInvite, setSendInvite] = useState(true);
+  const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const reload = useCallback(() => membersApi.list(project.id).then(setMembers), [project.id]);
+  const reloadLogs = useCallback(() => {
+    if (isAdmin) projectsApi.auditLogs(project.id, logFilter || undefined).then(setLogs, () => {});
+  }, [project.id, isAdmin, logFilter]);
+
   useEffect(() => {
     reload();
   }, [reload]);
 
+  useEffect(() => {
+    if (tab === "audit") reloadLogs();
+  }, [tab, reloadLogs]);
+
   const add = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
+    setNotice(null);
     try {
-      const m = await membersApi.add(project.id, email.trim(), PRESETS[preset].permissions);
+      const m = await membersApi.add(project.id, email.trim(), PRESETS[preset].permissions, sendInvite);
       setMembers((prev) => [...prev, m]);
       setEmail("");
+      if (m.invite_status && INVITE_STATUS_MSG[m.invite_status]) setNotice(INVITE_STATUS_MSG[m.invite_status]);
     } catch (err) {
       setError(
         err instanceof ApiError && err.status === 409
@@ -43,13 +65,38 @@ export function MembersPage() {
     }
   };
 
+  const resend = async (m: Member) => {
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await membersApi.resendInvite(project.id, m.id);
+      setNotice(INVITE_STATUS_MSG[res.invite_status ?? ""] ?? "초대 재발송을 처리했습니다.");
+    } catch {
+      setError("초대 메일 재발송에 실패했습니다.");
+    }
+  };
+
+  const transferOwnership = async (m: Member) => {
+    if (!m.user) return;
+    if (!confirm(`'${m.user.name || m.email}' 님에게 프로젝트 소유권을 넘길까요?\n이전 후 내 계정은 관리자 멤버로 전환됩니다.`)) return;
+    setError(null);
+    setNotice(null);
+    try {
+      await projectsApi.transferOwnership(project.id, m.user.id);
+      await reloadProjects();
+      await reload();
+      setNotice(`${m.user.name || m.email} 님에게 소유권이 이전되었습니다.`);
+    } catch (err) {
+      setError(err instanceof ApiError ? String(err.detail) : "소유권 이전에 실패했습니다.");
+    }
+  };
+
   const toggle = async (m: Member, perm: Permission) => {
     const next = m.permissions.includes(perm) ? m.permissions.filter((p) => p !== perm) : [...m.permissions, perm];
-    // 관리자 해제 시에는 관리자만 빼고 나머지는 유지
     const perms = perm === "admin" && m.permissions.includes("admin") ? next.filter((p) => p !== "admin") : normalize(next);
     const updated = await membersApi.update(project.id, m.id, perms);
     setMembers((prev) => prev.map((x) => (x.id === m.id ? updated : x)));
-    if (m.user?.id === me?.id) reloadProjects(); // 내 권한이 바뀌면 화면 권한도 갱신
+    if (m.user?.id === me?.id) reloadProjects();
   };
 
   const remove = async (m: Member) => {
@@ -59,81 +106,148 @@ export function MembersPage() {
     if (m.user?.id === me?.id) reloadProjects();
   };
 
+  const nameByUserId = new Map(members.flatMap((m) => (m.user ? [[m.user.id, m.user.name || m.user.email]] : [])));
+
   return (
     <div className="members">
-      {isAdmin ? (
-        <form className="card create-card" onSubmit={add}>
-          <input
-            type="email"
-            name="email"
-            className="member-email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="추가할 사람의 구글 이메일"
-            required
-          />
-          <select className="filter-select" value={preset} onChange={(e) => setPreset(Number(e.target.value))} aria-label="권한">
-            {PRESETS.map((p, i) => (
-              <option key={p.label} value={i}>
-                {p.label}
-              </option>
-            ))}
-          </select>
-          <button type="submit" className="btn btn-primary">
-            <PlusIcon size={11} /> 멤버 추가
-          </button>
-          <span className="muted member-help">아직 가입하지 않은 사람도 추가할 수 있어요. 그 이메일로 구글 로그인하면 바로 참여됩니다.</span>
-        </form>
-      ) : (
-        <p className="dash-sub member-readonly">멤버와 권한은 관리자만 바꿀 수 있습니다.</p>
-      )}
-      {error && <p className="error" style={{ margin: "-4px 4px 12px" }}>{error}</p>}
-
-      <div className="card member-table">
-        <div className="member-row member-header">
-          <span>멤버 {members.length}</span>
-          {PERMISSIONS.map((p) => (
-            <span key={p} className="perm-col" title={PERMISSION_HINT[p]}>
-              {PERMISSION_LABEL[p]}
-            </span>
-          ))}
-          <span />
-        </div>
-        {members.map((m) => (
-          <div key={m.id} className="member-row">
-            <span className="member-who">
-              <Avatar user={m.user} size={26} />
-              <span className="member-names">
-                <strong>
-                  {m.user?.name || m.email}
-                  {m.user?.id === me?.id && <span className="muted"> (나)</span>}
-                </strong>
-                <span className="muted">{m.email}</span>
-              </span>
-              {m.is_owner && <span className="pill tone-run">소유자</span>}
-              {m.pending && <span className="pill tone-wait">초대됨 · 로그인 전</span>}
-            </span>
-            {PERMISSIONS.map((p) => (
-              <span key={p} className="perm-col">
-                <input
-                  type="checkbox"
-                  checked={m.permissions.includes(p)}
-                  disabled={!isAdmin || m.is_owner || p === "view" || (p !== "admin" && m.permissions.includes("admin"))}
-                  onChange={() => toggle(m, p)}
-                  aria-label={`${m.email} ${PERMISSION_LABEL[p]}`}
-                />
-              </span>
-            ))}
-            <span className="member-actions">
-              {isAdmin && !m.is_owner && (
-                <button className="icon-btn danger" onClick={() => remove(m)} title="제거">
-                  <TrashIcon size={13} />
-                </button>
-              )}
-            </span>
+      {isAdmin && (
+        <div className="kb-bar">
+          <div className="segment">
+            <button aria-pressed={tab === "members"} onClick={() => setTab("members")}>
+              멤버 · 권한 ({members.length})
+            </button>
+            <button aria-pressed={tab === "audit"} onClick={() => setTab("audit")}>
+              감사 로그
+            </button>
           </div>
-        ))}
-      </div>
+        </div>
+      )}
+
+      {tab === "members" ? (
+        <>
+          {isAdmin ? (
+            <form className="card create-card" onSubmit={add}>
+              <input
+                type="email"
+                name="email"
+                className="member-email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="추가할 사람의 구글 이메일"
+                required
+              />
+              <select className="filter-select" value={preset} onChange={(e) => setPreset(Number(e.target.value))} aria-label="권한">
+                {PRESETS.map((p, i) => (
+                  <option key={p.label} value={i}>
+                    {p.label}
+                  </option>
+                ))}
+              </select>
+              <label className="kind-toggle">
+                <input type="checkbox" checked={sendInvite} onChange={(e) => setSendInvite(e.target.checked)} /> 초대 메일
+              </label>
+              <button type="submit" className="btn btn-primary">
+                <PlusIcon size={11} /> 멤버 추가
+              </button>
+              <span className="muted member-help">아직 가입하지 않은 사람도 추가할 수 있어요. 그 이메일로 구글 로그인하면 바로 참여됩니다.</span>
+            </form>
+          ) : (
+            <p className="dash-sub member-readonly">멤버와 권한은 관리자만 바꿀 수 있습니다.</p>
+          )}
+          {notice && <p className="alert tone-done" style={{ margin: "0 0 10px" }}>{notice}</p>}
+          {error && <p className="error" style={{ margin: "-4px 4px 12px" }}>{error}</p>}
+
+          <div className="card member-table">
+            <div className="member-row member-header">
+              <span>멤버 {members.length}</span>
+              {PERMISSIONS.map((p) => (
+                <span key={p} className="perm-col" title={PERMISSION_HINT[p]}>
+                  {PERMISSION_LABEL[p]}
+                </span>
+              ))}
+              <span />
+            </div>
+            {members.map((m) => (
+              <div key={m.id} className="member-row">
+                <span className="member-who">
+                  <Avatar user={m.user} size={26} />
+                  <span className="member-names">
+                    <strong>
+                      {m.user?.name || m.email}
+                      {m.user?.id === me?.id && <span className="muted"> (나)</span>}
+                    </strong>
+                    <span className="muted">{m.email}</span>
+                  </span>
+                  {m.is_owner && <span className="pill tone-run">소유자</span>}
+                  {m.pending && <span className="pill tone-wait">초대됨 · 로그인 전</span>}
+                </span>
+                {PERMISSIONS.map((p) => (
+                  <span key={p} className="perm-col">
+                    <input
+                      type="checkbox"
+                      checked={m.permissions.includes(p)}
+                      disabled={!isAdmin || m.is_owner || p === "view" || (p !== "admin" && m.permissions.includes("admin"))}
+                      onChange={() => toggle(m, p)}
+                      aria-label={`${m.email} ${PERMISSION_LABEL[p]}`}
+                    />
+                  </span>
+                ))}
+                <span className="member-actions">
+                  {isAdmin && !m.is_owner && m.pending && (
+                    <button className="btn btn-sm btn-ghost" onClick={() => resend(m)} title="초대 메일 재발송">
+                      재발송
+                    </button>
+                  )}
+                  {project.is_owner && !m.is_owner && m.user && (
+                    <button className="btn btn-sm btn-ghost" onClick={() => transferOwnership(m)} title="소유권 이전">
+                      소유권 이전
+                    </button>
+                  )}
+                  {isAdmin && !m.is_owner && (
+                    <button className="icon-btn danger" onClick={() => remove(m)} title="제거">
+                      <TrashIcon size={13} />
+                    </button>
+                  )}
+                </span>
+              </div>
+            ))}
+          </div>
+        </>
+      ) : (
+        <div className="kb-section">
+          <div className="kb-actions-bar">
+            <select value={logFilter} onChange={(e) => setLogFilter(e.target.value)} aria-label="감사 로그 필터">
+              <option value="">모든 이벤트</option>
+              <option value="project">프로젝트 · 소유권</option>
+              <option value="member">멤버 · 초대</option>
+              <option value="task">일감</option>
+              <option value="wiki">위키 · 복원</option>
+              <option value="attachment">첨부 파일</option>
+              <option value="knowledge">지식 추출 · 리뷰</option>
+            </select>
+            <button className="btn btn-sm" onClick={reloadLogs}>
+              새로고침
+            </button>
+          </div>
+          {logs.length === 0 ? (
+            <div className="card empty">기록된 감사 로그가 없습니다.</div>
+          ) : (
+            <div className="card rows">
+              {logs.map((l) => (
+                <div key={l.id} className="row">
+                  <span className="key-badge">{l.action}</span>
+                  <span className="row-main">
+                    <span className="row-title">{l.summary}</span>
+                    <span className="row-meta">
+                      {nameByUserId.get(l.actor_id) ?? l.actor_id} · {timeAgo(l.created_at)}
+                    </span>
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -124,8 +124,10 @@ def redirect_uri_matches(registered: list[str], requested: str) -> bool:
     return False
 
 
-def register_client(db: Database, metadata: dict) -> dict:
+def register_client(db: Database, metadata: dict, *, max_clients: int = 500) -> dict:
     """DCR (RFC 7591). 2026-07-28 에서 deprecated — CIMD 를 지원하지 않는 클라이언트 호환용."""
+    if max_clients > 0 and len(db.oauth_clients.list()) >= max_clients:
+        raise OAuthError("too_many_requests", "등록 가능한 동적 클라이언트 수 한도에 도달했습니다", 429)
     redirect_uris = metadata.get("redirect_uris")
     if not isinstance(redirect_uris, list) or not redirect_uris or not all(isinstance(u, str) for u in redirect_uris):
         raise OAuthError("invalid_redirect_uri", "redirect_uris 가 필요합니다")
@@ -219,17 +221,35 @@ class AuthorizationCode:
 
 
 class Store:
-    """수명이 짧은 인가 요청·코드는 메모리에 (단일 프로세스 전제)."""
+    """수명이 짧은 인가 요청·코드·요청 속도 제한을 메모리에 보관 (JSON 백엔드·단일 프로세스용)."""
 
     def __init__(self) -> None:
         self.lock = threading.Lock()
         self.pending: dict[str, PendingAuthorization] = {}
         self.codes: dict[str, AuthorizationCode] = {}
+        self.dcr_hits: dict[str, list[float]] = {}
 
     def _sweep(self) -> None:
         now = time.monotonic()
         self.pending = {k: v for k, v in self.pending.items() if v.expires > now}
         self.codes = {k: v for k, v in self.codes.items() if v.expires > now}
+
+    def check_dcr_rate_limit(self, key: str, limit_per_min: int) -> bool:
+        if limit_per_min <= 0:
+            return True
+        now = time.monotonic()
+        cutoff = now - 60.0
+        with self.lock:
+            hits = [t for t in self.dcr_hits.get(key, ()) if t > cutoff]
+            if len(hits) >= limit_per_min:
+                self.dcr_hits[key] = hits
+                return False
+            hits.append(now)
+            self.dcr_hits[key] = hits
+            # 오래된 키 정리
+            if len(self.dcr_hits) > 1024:
+                self.dcr_hits = {k: [t for t in v if t > cutoff] for k, v in self.dcr_hits.items() if any(t > cutoff for t in v)}
+            return True
 
     def add_pending(self, p: PendingAuthorization) -> None:
         with self.lock:
@@ -288,6 +308,11 @@ def approve(settings: Settings, db: Database, store: Store, pending: PendingAuth
     else:
         grant = grant.model_copy(update={"scopes": scopes, "client_name": pending.client.client_name, "updated_at": utcnow()})
         db.oauth_grants.update(grant)
+        # 재동의에서 권한을 줄였다면 더 넓은 범위를 가진 기존 refresh 토큰을 폐기한다
+        new_scope_set = set(scopes)
+        for rt in db.refresh_tokens.list(lambda t: t.grant_id == grant.id):
+            if not set(rt.scopes) <= new_scope_set:
+                db.refresh_tokens.delete(rt.id)
     code = secrets.token_urlsafe(32)
     store.add_code(code, AuthorizationCode(user_id, grant.id, pending.client.client_id, pending.redirect_uri, pending.code_challenge, scopes, pending.resource))
     return redirect_with(settings, pending.redirect_uri, {"code": code, "state": pending.state})
@@ -367,8 +392,11 @@ def refresh(settings: Settings, db: Database, form: dict, client: ClientInfo) ->
         for t in db.refresh_tokens.list(lambda t: t.grant_id == rt.grant_id):
             db.refresh_tokens.delete(t.id)
         raise OAuthError("invalid_grant", "이미 사용된 refresh_token 입니다 — 다시 로그인하세요")
-    if rt.expires_at <= datetime.now(timezone.utc) or db.oauth_grants.get(rt.grant_id) is None:
+    grant = db.oauth_grants.get(rt.grant_id)
+    if rt.expires_at <= datetime.now(timezone.utc) or grant is None:
         raise OAuthError("invalid_grant", "refresh_token 이 만료되었거나 연결이 해제되었습니다")
+    if not set(rt.scopes) <= set(grant.scopes):
+        raise OAuthError("invalid_grant", "연결 권한이 축소되어 refresh_token 을 사용할 수 없습니다")
     resource = normalize_resource(settings, form.get("resource")) if form.get("resource") else rt.resource
     if resource != rt.resource:
         raise OAuthError("invalid_target", "resource 가 다릅니다")
@@ -410,6 +438,9 @@ def verify_access_token(settings: Settings, db: Database, token: str) -> dict | 
         return None
     grant = db.oauth_grants.get(claims["grant"])
     if grant is None or grant.user_id != claims["sub"] or db.users.get(claims["sub"]) is None:
+        return None
+    token_scopes = set(str(claims.get("scope", "")).split())
+    if not token_scopes <= set(grant.scopes):
         return None
     now = utcnow()
     if grant.last_used_at is None or now - grant.last_used_at > timedelta(minutes=5):

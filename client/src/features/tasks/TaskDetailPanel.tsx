@@ -1,20 +1,23 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { commentsApi, tasksApi } from "../../api";
-import { ApiError } from "../../api/http";
+import { attachmentsApi, commentsApi, tasksApi, wikiApi } from "../../api";
+import { ApiError, saveBlob } from "../../api/http";
 import { useAuth } from "../../auth/AuthContext";
-import { CloseIcon, DocIcon, EditIcon, LinkIcon } from "../../components/icons";
+import { EditorSuggestBar, useEditorSuggest } from "../../components/EditorSuggest";
+import { CloseIcon, DocIcon, EditIcon, LinkIcon, PaperclipIcon } from "../../components/icons";
+import { extractImageFile, insertUploadedImage } from "../../lib/editorUpload";
 import { useLinkResolver } from "../../lib/useLinkResolver";
 import { Markdown } from "../../components/Markdown";
-import type { Comment, Task, TaskActivity, TaskUpdate, WikiPageSummary } from "../../types";
+import type { Attachment, Comment, Task, TaskActivity, TaskLink, TaskLinkKind, TaskUpdate, WikiPageSummary } from "../../types";
 import { useBoard } from "./boardContext";
 import { TaskChecklist } from "./TaskChecklist";
 import { TaskProperties } from "./TaskProperties";
 import { TaskTimeline } from "./TaskTimeline";
+import { STAGE_TONE, TASK_LINK_LABEL } from "./tones";
 
 /** 일감 상세 — 오른쪽에서 열리는 패널 (/projects/:pid/tasks/:taskId) */
 export function TaskDetailPanel() {
-  const { project, tasks, stages, users, members, can, onChanged, onDeleted } = useBoard();
+  const { project, tasks, stages, users, members, can, onCreated, onChanged, onDeleted } = useBoard();
   const editable = can("edit");
   const { taskId = "" } = useParams();
   const navigate = useNavigate();
@@ -23,14 +26,30 @@ export function TaskDetailPanel() {
   const [notFound, setNotFound] = useState(false);
   const [comments, setComments] = useState<Comment[]>([]);
   const [activity, setActivity] = useState<TaskActivity[]>([]);
+  const [subtasks, setSubtasks] = useState<Task[]>([]);
+  const [taskLinks, setTaskLinks] = useState<TaskLink[]>([]);
+  const [wikiRefs, setWikiRefs] = useState<WikiPageSummary[]>([]);
+  const [wikiLinks, setWikiLinks] = useState<{ title: string; page_id: string | null }[]>([]);
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [pages, setPages] = useState<WikiPageSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [desc, setDesc] = useState<string | null>(null); // null = 보기 모드
-  const [wikiRefs, setWikiRefs] = useState<WikiPageSummary[]>([]);
-  const resolver = useLinkResolver(project, { tasks });
+  const [descCursor, setDescCursor] = useState(0);
+  const [newSubTitle, setNewSubTitle] = useState("");
+  const [linkKind, setLinkKind] = useState<TaskLinkKind>("relates_to");
+  const [linkTarget, setLinkTarget] = useState("");
+  const descRef = useRef<HTMLTextAreaElement>(null);
+  const attInput = useRef<HTMLInputElement>(null);
+  const resolver = useLinkResolver(project, { tasks, pages });
+  const descSuggest = useEditorSuggest(desc ?? "", descCursor, pages, members);
 
   const close = useCallback(() => navigate(`/projects/${project.id}/tasks`), [navigate, project.id]);
   const refreshActivity = useCallback(() => tasksApi.activity(project.id, taskId).then(setActivity), [project.id, taskId]);
+
+  useEffect(() => {
+    wikiApi.list(project.id).then(setPages, () => {});
+  }, [project.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -43,14 +62,22 @@ export function TaskDetailPanel() {
       commentsApi.list(project.id, taskId),
       tasksApi.activity(project.id, taskId),
       tasksApi.wikiRefs(project.id, taskId),
+      tasksApi.wikiLinks(project.id, taskId),
+      tasksApi.subtasks(project.id, taskId),
+      tasksApi.links(project.id, taskId),
+      attachmentsApi.list(project.id, { task_id: taskId }),
     ])
-      .then(([t, c, a, w]) => {
+      .then(([t, c, a, w, wl, subs, ls, atts]) => {
         if (cancelled) return;
         setTask(t);
         setTitle(t.title);
         setComments(c);
         setActivity(a);
         setWikiRefs(w);
+        setWikiLinks(wl);
+        setSubtasks(subs);
+        setTaskLinks(ls);
+        setAttachments(atts);
       })
       .catch(() => !cancelled && setNotFound(true));
     return () => {
@@ -58,17 +85,14 @@ export function TaskDetailPanel() {
     };
   }, [project.id, taskId]);
 
-  // 보드 카드에서 단계를 바꾼 경우 등 보드 쪽 최신값 반영
   const boardTask = tasks.find((t) => t.id === taskId);
   useEffect(() => {
     if (boardTask && task && boardTask.updated_at > task.updated_at) {
       setTask(boardTask);
       refreshActivity();
     }
-    // 보드 쪽 updated_at 이 바뀔 때만 반응
   }, [boardTask?.updated_at]);
 
-  // Esc 로 닫기 (입력 중이 아닐 때)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const typing = e.target instanceof HTMLElement && e.target.closest("input, textarea, select");
@@ -86,6 +110,9 @@ export function TaskDetailPanel() {
       setTask(updated);
       onChanged(updated);
       refreshActivity();
+      if (body.description !== undefined) {
+        tasksApi.wikiLinks(project.id, task.id).then(setWikiLinks, () => {});
+      }
     } catch (e) {
       const dates = e instanceof ApiError && e.status === 422 && JSON.stringify(e.detail).includes("start_date");
       setError(dates ? "시작일은 종료일보다 늦을 수 없습니다." : "저장하지 못했습니다. 입력값을 확인하세요.");
@@ -104,6 +131,37 @@ export function TaskDetailPanel() {
     close();
   };
 
+  const addSubtask = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!task || !newSubTitle.trim()) return;
+    const created = await tasksApi.create(project.id, { title: newSubTitle.trim(), parent_id: task.id });
+    setSubtasks((prev) => [...prev, created]);
+    onCreated(created);
+    const updatedParent = { ...task, subtask_count: task.subtask_count + 1 };
+    setTask(updatedParent);
+    onChanged(updatedParent);
+    setNewSubTitle("");
+  };
+
+  const addTaskLink = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!task || !linkTarget) return;
+    setError(null);
+    try {
+      const created = await tasksApi.addLink(project.id, task.id, linkTarget, linkKind);
+      setTaskLinks((prev) => [...prev, created]);
+      setLinkTarget("");
+    } catch (err) {
+      setError(err instanceof ApiError ? String(err.detail) : "일감 연결에 실패했습니다.");
+    }
+  };
+
+  const removeTaskLink = async (linkId: string) => {
+    if (!task) return;
+    await tasksApi.removeLink(project.id, task.id, linkId);
+    setTaskLinks((prev) => prev.filter((l) => l.id !== linkId));
+  };
+
   const commitTitle = () => {
     const t = title.trim();
     if (task && t && t !== task.title) patch({ title: t });
@@ -117,6 +175,8 @@ export function TaskDetailPanel() {
   };
 
   const taskKey = task ? `${project.key}-${task.number}` : "";
+  const parentTask = task?.parent_id ? tasks.find((t) => t.id === task.parent_id) : undefined;
+  const linkCandidates = tasks.filter((t) => t.id !== task?.id);
 
   return (
     <>
@@ -144,6 +204,14 @@ export function TaskDetailPanel() {
           <div className="sheet-body">
             <div className="detail-main">
               {error && <div className="alert tone-err">{error}</div>}
+              {parentTask && (
+                <div className="parent-crumb">
+                  <span className="muted">상위 일감</span>
+                  <Link to={`/projects/${project.id}/tasks/${parentTask.id}`} className="conn-chip">
+                    {project.key}-{parentTask.number} {parentTask.title}
+                  </Link>
+                </div>
+              )}
 
               <input
                 className="detail-title"
@@ -170,25 +238,64 @@ export function TaskDetailPanel() {
                     <Markdown links={resolver}>{task.description}</Markdown>
                   ) : editable ? (
                     <button className="placeholder-block" onClick={() => setDesc("")}>
-                      설명을 추가하세요 (Markdown 지원)
+                      설명을 추가하세요 (Markdown · [[위키]] · @멘션 지원)
                     </button>
                   ) : (
                     <p className="muted">설명 없음</p>
                   )
                 ) : (
                   <div className="desc-editor">
+                    <EditorSuggestBar
+                      match={descSuggest.match}
+                      items={descSuggest.items}
+                      index={descSuggest.index}
+                      value={desc}
+                      onPick={(next, pos) => {
+                        setDesc(next);
+                        setDescCursor(pos);
+                        requestAnimationFrame(() => descRef.current?.setSelectionRange(pos, pos));
+                      }}
+                    />
                     <div className="editor-split compact">
                       <textarea
+                        ref={descRef}
                         autoFocus
                         value={desc}
-                        onChange={(e) => setDesc(e.target.value)}
+                        onChange={(e) => {
+                          setDesc(e.target.value);
+                          setDescCursor(e.target.selectionStart ?? e.target.value.length);
+                        }}
+                        onSelect={(e) => setDescCursor((e.target as HTMLTextAreaElement).selectionStart ?? 0)}
+                        onPaste={(e) => {
+                          const img = extractImageFile(e.clipboardData);
+                          if (img && can("create")) {
+                            e.preventDefault();
+                            insertUploadedImage(project.id, img, desc, descRef.current, setDesc);
+                          }
+                        }}
+                        onDrop={(e) => {
+                          const img = extractImageFile(e.dataTransfer);
+                          if (img && can("create")) {
+                            e.preventDefault();
+                            insertUploadedImage(project.id, img, desc, descRef.current, setDesc);
+                          }
+                        }}
                         onKeyDown={(e) => {
+                          if (
+                            descSuggest.handleKeyDown(e, (next, pos) => {
+                              setDesc(next);
+                              setDescCursor(pos);
+                              requestAnimationFrame(() => descRef.current?.setSelectionRange(pos, pos));
+                            })
+                          ) {
+                            return;
+                          }
                           if ((e.metaKey || e.ctrlKey) && e.key === "s") {
                             e.preventDefault();
                             saveDesc();
                           }
                         }}
-                        placeholder="배경, 목표, 완료 조건 등을 Markdown으로 작성하세요"
+                        placeholder="배경, 목표, 완료 조건 등을 Markdown으로 작성하세요 ([[위키]], @멘션, 이미지 붙여넣기 지원)"
                       />
                       <div className="editor-preview">
                         <div className="editor-preview-label">미리보기</div>
@@ -197,7 +304,7 @@ export function TaskDetailPanel() {
                     </div>
                     <div className="editor-foot">
                       <span className="editor-hint">
-                        <code>[[위키 제목]]</code> <code>{project.key}-12</code> 로 연결 · 저장 ⌘S
+                        <code>[[위키 제목]]</code> <code>@멘션</code> <code>{project.key}-12</code> · 저장 ⌘S
                       </span>
                       <button className="btn btn-ghost" onClick={() => setDesc(null)}>
                         취소
@@ -212,18 +319,165 @@ export function TaskDetailPanel() {
 
               <TaskChecklist items={task.checklist} readOnly={!editable} onChange={(checklist) => patch({ checklist })} />
 
-              {wikiRefs.length > 0 && (
-                <section className="detail-section">
-                  <header className="section-head">
-                    <h3>이 일감을 언급한 위키 {wikiRefs.length}</h3>
-                  </header>
-                  <div className="conn-group">
-                    {wikiRefs.map((p) => (
-                      <Link key={p.id} to={`/projects/${project.id}/wiki/${p.id}`} className="conn-chip">
-                        <DocIcon size={11} /> {p.title}
+              {/* 하위 일감 */}
+              <section className="detail-section">
+                <header className="section-head">
+                  <h3>하위 일감 {subtasks.length > 0 && `${subtasks.filter((s) => s.stage === "done").length}/${subtasks.length}`}</h3>
+                </header>
+                {subtasks.length > 0 && (
+                  <div className="subtask-list">
+                    {subtasks.map((s) => (
+                      <Link key={s.id} to={`/projects/${project.id}/tasks/${s.id}`} className={`conn-chip task ${STAGE_TONE[s.stage]}`}>
+                        <span className="dot" /> {project.key}-{s.number} {s.title}
                       </Link>
                     ))}
                   </div>
+                )}
+                {can("create") && (
+                  <form className="inline-add" onSubmit={addSubtask}>
+                    <input value={newSubTitle} onChange={(e) => setNewSubTitle(e.target.value)} placeholder="하위 일감 제목 추가…" />
+                    <button type="submit" className="btn btn-sm" disabled={!newSubTitle.trim()}>
+                      추가
+                    </button>
+                  </form>
+                )}
+              </section>
+
+              {/* 일감 간 링크 */}
+              <section className="detail-section">
+                <header className="section-head">
+                  <h3>연결된 일감 {taskLinks.length > 0 && taskLinks.length}</h3>
+                </header>
+                {taskLinks.length > 0 && (
+                  <div className="conn-group">
+                    {taskLinks.map((l) => (
+                      <span key={l.id} className={`conn-chip task ${STAGE_TONE[l.stage]}`}>
+                        <span className="link-kind-tag">{TASK_LINK_LABEL[l.kind] ?? l.kind}</span>
+                        <Link to={`/projects/${project.id}/tasks/${l.task_id}`}>
+                          {project.key}-{l.number} {l.title}
+                        </Link>
+                        {editable && (
+                          <button type="button" className="chip-del" title="연결 해제" onClick={() => removeTaskLink(l.id)}>
+                            ×
+                          </button>
+                        )}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {editable && linkCandidates.length > 0 && (
+                  <form className="inline-add" onSubmit={addTaskLink}>
+                    <select value={linkKind} onChange={(e) => setLinkKind(e.target.value as TaskLinkKind)} aria-label="관계 종류">
+                      <option value="relates_to">관련됨</option>
+                      <option value="blocks">차단함</option>
+                      <option value="duplicates">중복함</option>
+                    </select>
+                    <select value={linkTarget} onChange={(e) => setLinkTarget(e.target.value)} aria-label="대상 일감">
+                      <option value="">일감 선택…</option>
+                      {linkCandidates.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {project.key}-{t.number} {t.title}
+                        </option>
+                      ))}
+                    </select>
+                    <button type="submit" className="btn btn-sm" disabled={!linkTarget}>
+                      연결
+                    </button>
+                  </form>
+                )}
+              </section>
+
+              {/* 양방향 일감↔위키 연결 */}
+              {(wikiLinks.length > 0 || wikiRefs.length > 0) && (
+                <section className="detail-section">
+                  <header className="section-head">
+                    <h3>연결된 위키 {wikiLinks.length + wikiRefs.length}</h3>
+                  </header>
+                  <div className="conn-group">
+                    {wikiLinks.map((w) =>
+                      w.page_id ? (
+                        <Link key={`out-${w.title}`} to={`/projects/${project.id}/wiki/${w.page_id}`} className="conn-chip">
+                          <DocIcon size={11} /> → {w.title}
+                        </Link>
+                      ) : (
+                        <span key={`out-${w.title}`} className="conn-chip missing">
+                          → {w.title}
+                        </span>
+                      ),
+                    )}
+                    {wikiRefs.map((p) => (
+                      <Link key={`in-${p.id}`} to={`/projects/${project.id}/wiki/${p.id}`} className="conn-chip">
+                        <DocIcon size={11} /> ← {p.title}
+                      </Link>
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {/* 첨부 파일 */}
+              {(attachments.length > 0 || can("create")) && (
+                <section className="detail-section">
+                  <header className="section-head">
+                    <h3>
+                      <PaperclipIcon size={12} /> 첨부 파일 {attachments.length > 0 && attachments.length}
+                    </h3>
+                    <span className="spacer" />
+                    {can("create") && (
+                      <>
+                        <button type="button" className="btn btn-sm btn-ghost" onClick={() => attInput.current?.click()}>
+                          + 파일 첨부
+                        </button>
+                        <input
+                          ref={attInput}
+                          type="file"
+                          hidden
+                          onChange={async (e) => {
+                            const f = e.target.files?.[0];
+                            if (!f) return;
+                            try {
+                              const uploaded = await attachmentsApi.upload(project.id, f, { task_id: task.id });
+                              setAttachments((prev) => [uploaded, ...prev]);
+                            } catch (err) {
+                              setError(err instanceof ApiError ? String(err.detail) : "첨부 업로드 실패");
+                            }
+                            e.target.value = "";
+                          }}
+                        />
+                      </>
+                    )}
+                  </header>
+                  {attachments.length > 0 && (
+                    <div className="conn-group">
+                      {attachments.map((att) => (
+                        <span key={att.id} className="conn-chip att-chip">
+                          <button
+                            type="button"
+                            className="link-btn"
+                            onClick={async () => {
+                              const { blob, filename } = await attachmentsApi.download(project.id, att.id);
+                              saveBlob(blob, filename);
+                            }}
+                          >
+                            {att.filename} ({Math.max(1, Math.round(att.size / 1024))}KB)
+                          </button>
+                          {can("delete") && (
+                            <button
+                              type="button"
+                              className="chip-del"
+                              title="삭제"
+                              onClick={async () => {
+                                if (!confirm(`'${att.filename}' 첨부를 삭제할까요?`)) return;
+                                await attachmentsApi.remove(project.id, att.id);
+                                setAttachments((prev) => prev.filter((x) => x.id !== att.id));
+                              }}
+                            >
+                              ×
+                            </button>
+                          )}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </section>
               )}
 
@@ -232,6 +486,7 @@ export function TaskDetailPanel() {
                 comments={comments}
                 activity={activity}
                 users={users}
+                pages={pages}
                 stages={stages}
                 meId={me?.id}
                 canComment={can("create")}

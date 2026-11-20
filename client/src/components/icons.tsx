@@ -145,3 +145,39 @@ export const PlugIcon = (p: P) => (
     <path d="M9 3v5M15 3v5M6 8h12v4a6 6 0 0 1-12 0zM12 18v3" />
   </Icon>
 );
+
+export const BellIcon = (p: P) => (
+  <Icon {...p}>
+    <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+    <path d="M10.3 21a1.9 1.9 0 0 0 3.4 0" />
+  </Icon>
+);
+
+export const HistoryIcon = (p: P) => (
+  <Icon {...p}>
+    <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
+    <path d="M3 3v5h5M12 7v5l3 2" />
+  </Icon>
+);
+
+export const GraphIcon = (p: P) => (
+  <Icon {...p}>
+    <circle cx="6" cy="6" r="2.5" />
+    <circle cx="18" cy="7" r="2.5" />
+    <circle cx="12" cy="18" r="2.5" />
+    <path d="M8.2 7.2 15.6 7M7.2 8.2l3.6 7.6M16.8 9.2l-3.6 6.6" />
+  </Icon>
+);
+
+export const PaperclipIcon = (p: P) => (
+  <Icon {...p}>
+    <path d="m21.4 11.1-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 1 1 5.7 5.7l-9.2 9.2a2 2 0 1 1-2.8-2.8l8.5-8.5" />
+  </Icon>
+);
+
+export const SparklesIcon = (p: P) => (
+  <Icon {...p}>
+    <path d="m12 3 1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z" />
+    <path d="M19 3v3M20.5 4.5h-3M5 17v3M6.5 18.5h-3" />
+  </Icon>
+);

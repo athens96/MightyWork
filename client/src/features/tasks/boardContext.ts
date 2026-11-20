@@ -9,6 +9,7 @@ export interface BoardContext {
   users: User[]; // 표시용 (덧글 작성자 등)
   members: User[]; // 작업자로 지정 가능한 사람 (로그인한 멤버)
   can: (perm: Permission) => boolean;
+  onCreated: (task: Task) => void;
   onChanged: (task: Task) => void;
   onDeleted: (taskId: string) => void;
 }

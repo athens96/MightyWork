@@ -147,6 +147,14 @@ async def test_oauth_flow_and_tools(server):
         hits = (await call(client, "search", {"project": "MW", "query": "MCP"})).structured_content["result"]
         assert {h["kind"] for h in hits} == {"task", "wiki"}
 
+        # 신규 도구: 하위 일감 + 일감 링크 + 용어집/그래프 Q&A
+        sub = (await call(client, "create_task", {"project": "MW", "title": "하위 작업", "parent": "MW-1"})).structured_content
+        assert sub["key"] == "MW-2"
+        linked = (await call(client, "link_tasks", {"project": "MW", "source_task": "MW-1", "target_task": "MW-2", "kind": "blocks"})).structured_content
+        assert linked["kind"] == "blocks"
+        qa = (await call(client, "ask_knowledge_graph", {"project": "MW", "question": "MCP 가이드가 무엇인가요?"})).structured_content
+        assert "MCP 가이드" in qa["answer"]
+
         missing = await call(client, "get_task", {"project": "NOPE", "task": "1"})
         assert missing.is_error and "접근 권한" in text(missing)
 

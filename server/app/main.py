@@ -2,13 +2,28 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import APIRouter, FastAPI
+from fastapi import APIRouter, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pathlib import Path
 
 from fastapi.responses import FileResponse, JSONResponse
 
-from app.api.routes import auth, comments, export, importer, knowledge, members, oauth, projects, tasks, users, wiki
+from app.api.routes import (
+    attachments,
+    auth,
+    comments,
+    export,
+    importer,
+    knowledge,
+    knowledge_base,
+    members,
+    notifications,
+    oauth,
+    projects,
+    tasks,
+    users,
+    wiki,
+)
 from app.core.config import Settings
 from app.db import Database
 from app.mcp_server import build_mcp, transport_security
@@ -22,7 +37,8 @@ def create_app(settings: Settings | None = None, db: Database | None = None) -> 
     settings = settings or Settings()
     if settings.jwt_secret == "change-me":
         logger.warning("JWT_SECRET is the default value. Set a strong secret in server/.env before deploying.")
-    db = db or Database.from_json_files(settings.data_dir)
+    if db is None:
+        db = Database.from_sqlite(settings.data_dir) if settings.db_backend == "sqlite" else Database.from_json_files(settings.data_dir)
 
     # MCP 서버 (Streamable HTTP /mcp) — session_manager 는 앱을 만든 뒤에 생기므로 여기서 먼저 만든다
     mcp = build_mcp(settings, db)
@@ -36,7 +52,7 @@ def create_app(settings: Settings | None = None, db: Database | None = None) -> 
     app = FastAPI(title=f"{settings.app_name} API", version="0.1.0", lifespan=lifespan)
     app.state.settings = settings
     app.state.db = db
-    app.state.oauth_store = Store()
+    app.state.oauth_store = db.make_oauth_store() or Store()
     app.state.mcp = mcp
 
     app.add_middleware(
@@ -46,6 +62,14 @@ def create_app(settings: Settings | None = None, db: Database | None = None) -> 
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    @app.middleware("http")
+    async def security_headers(request: Request, call_next):
+        response = await call_next(request)
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        return response
 
     api = APIRouter(prefix="/api")
 
@@ -66,7 +90,10 @@ def create_app(settings: Settings | None = None, db: Database | None = None) -> 
     api.include_router(tasks.router)
     api.include_router(comments.router)
     api.include_router(wiki.router)
+    api.include_router(attachments.router)
+    api.include_router(notifications.router)
     api.include_router(knowledge.router)
+    api.include_router(knowledge_base.router)
     api.include_router(export.router)
     api.include_router(importer.router)
     api.include_router(oauth.api)

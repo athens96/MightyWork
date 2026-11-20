@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type DragEvent, type FormEvent } from "react";
 import { Outlet, useMatch, useNavigate } from "react-router-dom";
 import { membersApi, pipelineApi, tasksApi, usersApi } from "../../api";
 import { can as canDo } from "../../lib/permissions";
@@ -34,9 +34,11 @@ export function TaskBoardPage() {
   const [members, setMembers] = useState<User[]>([]);
   const [newTitle, setNewTitle] = useState("");
   const [filter, setFilter] = useState<AssigneeFilter>("all");
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dropStage, setDropStage] = useState<PipelineStage | null>(null);
 
   const reload = useCallback(async () => {
-    const [p, t, u, m] = await Promise.all([pipelineApi.get(), tasksApi.list(project.id), usersApi.list(), membersApi.list(project.id)]);
+    const [p, t, u, m] = await Promise.all([pipelineApi.get(), tasksApi.list(project.id), usersApi.listByProject(project.id), membersApi.list(project.id)]);
     setStages(p);
     setTasks(t);
     setUsers(u);
@@ -58,6 +60,7 @@ export function TaskBoardPage() {
     navigate(`/projects/${project.id}/tasks/${task.id}`); // 만든 뒤 바로 상세 입력
   };
 
+  const onCreated = useCallback((task: Task) => setTasks((prev) => [...prev, task]), []);
   const onChanged = useCallback((task: Task) => setTasks((prev) => prev.map((t) => (t.id === task.id ? task : t))), []);
   const onDeleted = useCallback((id: string) => setTasks((prev) => prev.filter((t) => t.id !== id)), []);
 
@@ -67,7 +70,29 @@ export function TaskBoardPage() {
   const count = (...s: PipelineStage[]) => visible.filter((t) => s.includes(t.stage)).length;
 
   const can = (perm: Permission) => canDo(project, perm);
-  const context: BoardContext = { project, tasks, stages, users, members, can, onChanged, onDeleted };
+  const canEdit = can("edit");
+  const context: BoardContext = { project, tasks, stages, users, members, can, onCreated, onChanged, onDeleted };
+
+  const moveStage = async (taskId: string, target: PipelineStage) => {
+    const current = tasks.find((t) => t.id === taskId);
+    if (!current || current.stage === target || !canEdit) return;
+    // 낙관적 반영 후 서버 응답으로 확정, 실패 시 원복
+    setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, stage: target } : t)));
+    try {
+      const updated = await tasksApi.update(project.id, taskId, { stage: target });
+      onChanged(updated);
+    } catch {
+      onChanged(current);
+    }
+  };
+
+  const handleDrop = (e: DragEvent, target: PipelineStage) => {
+    e.preventDefault();
+    const taskId = e.dataTransfer.getData("text/plain") || draggingId;
+    setDropStage(null);
+    setDraggingId(null);
+    if (taskId) moveStage(taskId, target);
+  };
 
   return (
     <>
@@ -128,7 +153,20 @@ export function TaskBoardPage() {
           {stages.map((stage) => {
             const items = visible.filter((t) => t.stage === stage.key);
             return (
-              <section key={stage.key} className={`column ${STAGE_TONE[stage.key]}`}>
+              <section
+                key={stage.key}
+                className={`column ${STAGE_TONE[stage.key]} ${dropStage === stage.key ? "is-drop-target" : ""}`}
+                onDragOver={(e) => {
+                  if (!canEdit) return;
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = "move";
+                  if (dropStage !== stage.key) setDropStage(stage.key);
+                }}
+                onDragLeave={(e) => {
+                  if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropStage((cur) => (cur === stage.key ? null : cur));
+                }}
+                onDrop={(e) => handleDrop(e, stage.key)}
+              >
                 <h3 className="column-head">
                   <span className="dot" />
                   {stage.label}
@@ -144,6 +182,17 @@ export function TaskBoardPage() {
                     assignee={task.assignee_id ? usersById.get(task.assignee_id) : undefined}
                     stages={stages}
                     selected={task.id === openTaskId}
+                    draggable={canEdit}
+                    dragging={draggingId === task.id}
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData("text/plain", task.id);
+                      e.dataTransfer.effectAllowed = "move";
+                      setDraggingId(task.id);
+                    }}
+                    onDragEnd={() => {
+                      setDraggingId(null);
+                      setDropStage(null);
+                    }}
                   />
                 ))}
               </section>

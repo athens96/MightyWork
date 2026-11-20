@@ -22,7 +22,7 @@ MAX_BYTES = 20 * 1024 * 1024
 
 _FRONT = re.compile(r"\A---\n(.*?)\n---\n", re.S)
 _H1 = re.compile(r"^#\s+(.+?)\s*#*\s*$", re.M)
-_LOCAL_IMAGE = re.compile(r"!\[[^\]]*\]\((?!https?://|data:)[^)]*\)")
+_LOCAL_IMAGE = re.compile(r"!\[[^\]]*\]\((?!https?://|data:|/api/projects/)[^)]*\)")
 
 
 class UnsupportedFile(ValueError):

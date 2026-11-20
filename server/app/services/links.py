@@ -15,6 +15,7 @@ from app.models.wiki import WikiPage
 WIKI_LINK = re.compile(r"\[\[([^\[\]|\n]+?)(?:\|([^\[\]\n]*))?\]\]")
 # 코드 블록·인라인 코드 안의 텍스트는 링크로 보지 않는다
 _CODE = re.compile(r"```.*?```|`[^`\n]*`", re.S)
+_CODE_SPLIT = re.compile(r"(```.*?```|`[^`\n]*`)", re.S)
 
 
 def norm_title(title: str) -> str:
@@ -86,7 +87,7 @@ def pages_mentioning_task(db: Database, project: Project, task: Task) -> list[Wi
 
 
 def rename_links(md: str, old_title: str, new_title: str) -> str:
-    """[[old]] / [[old|별칭]] 을 새 제목으로 바꾼다 (별칭 유지, 대소문자·공백 무시)."""
+    """[[old]] / [[old|별칭]] 을 새 제목으로 바꾼다 (별칭 유지, 대소문자·공백 무시, 코드 블록 제외)."""
     old_key = norm_title(old_title)
 
     def repl(m: re.Match) -> str:
@@ -95,7 +96,9 @@ def rename_links(md: str, old_title: str, new_title: str) -> str:
         alias = m.group(2)
         return f"[[{new_title}|{alias}]]" if alias is not None else f"[[{new_title}]]"
 
-    return WIKI_LINK.sub(repl, md)
+    # 코드 블록·인라인 코드 안의 [[...]] 예시는 건드리지 않는다
+    parts = _CODE_SPLIT.split(md)
+    return "".join(p if i % 2 else WIKI_LINK.sub(repl, p) for i, p in enumerate(parts))
 
 
 def propagate_rename(db: Database, project: Project, page: WikiPage, old_title: str) -> int:

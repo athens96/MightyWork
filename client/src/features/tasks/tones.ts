@@ -23,9 +23,18 @@ export const FIELD_LABEL: Record<string, string> = {
   title: "제목",
   stage: "상태",
   priority: "우선순위",
+  parent_id: "상위 일감",
   assignee_id: "작업자",
   start_date: "시작일",
   due_date: "종료일",
   estimate: "추정치",
   tags: "레이블",
+};
+
+export const TASK_LINK_LABEL: Record<string, string> = {
+  blocks: "차단함",
+  blocked_by: "차단됨",
+  relates_to: "관련됨",
+  duplicates: "중복함",
+  duplicated_by: "중복됨",
 };

@@ -39,6 +39,7 @@ export interface Member {
   permissions: Permission[];
   is_owner: boolean;
   pending: boolean; // 초대됐지만 로그인 전
+  invite_status?: string | null; // sent | skipped_unconfigured | failed
 }
 
 export type ProjectCreate = Pick<Project, "key" | "name"> & Partial<Pick<Project, "description">>;
@@ -58,6 +59,17 @@ export interface ChecklistItem {
   done: boolean;
 }
 
+export type TaskLinkKind = "blocks" | "relates_to" | "duplicates";
+
+export interface TaskLink {
+  id: string;
+  kind: "blocks" | "blocked_by" | "relates_to" | "duplicates" | "duplicated_by";
+  task_id: string;
+  number: number;
+  title: string;
+  stage: PipelineStage;
+}
+
 export interface Task {
   id: string;
   project_id: string;
@@ -66,6 +78,7 @@ export interface Task {
   description: string; // Markdown
   stage: PipelineStage;
   priority: Priority;
+  parent_id: string | null;
   assignee_id: string | null; // 작업자
   tags: string[]; // 레이블
   start_date: string | null; // YYYY-MM-DD
@@ -73,12 +86,14 @@ export interface Task {
   estimate: number | null; // 스토리 포인트
   checklist: ChecklistItem[]; // 할 일
   comment_count: number; // 응답 전용
+  subtask_count: number;
+  subtask_done: number;
   created_by: string; // 보고자
   created_at: string;
   updated_at: string;
 }
 
-type TaskServerFields = "id" | "project_id" | "number" | "created_by" | "created_at" | "updated_at" | "comment_count";
+type TaskServerFields = "id" | "project_id" | "number" | "created_by" | "created_at" | "updated_at" | "comment_count" | "subtask_count" | "subtask_done";
 export type TaskCreate = Pick<Task, "title"> & Partial<Omit<Task, TaskServerFields>>;
 export type TaskUpdate = Partial<Omit<Task, TaskServerFields>>;
 
@@ -151,19 +166,32 @@ export interface UnlinkedMention {
 }
 
 export interface GraphNode {
-  id: string; // "wiki:<id>" | "task:<id>"
-  kind: "wiki" | "task";
+  id: string; // "wiki:<id>" | "task:<id>" | "glossary:<id>" | "entity:<id>"
+  kind: "wiki" | "task" | "glossary" | "entity";
   ref_id: string;
   label: string;
   depth: number; // 중심 0
-  status: string | null; // 위키 상태 또는 일감 단계
+  status: string | null; // 위키 상태, 일감 단계, 엔티티 종류
   number: number | null;
+}
+
+export interface GraphEdge {
+  source: string;
+  target: string;
+  kind: "link" | "mention" | "parent" | "task_link" | "broader" | "relation";
+  label?: string | null;
 }
 
 export interface LocalGraph {
   center: string;
   nodes: GraphNode[];
-  edges: { source: string; target: string; kind: "link" | "mention" | "parent" }[];
+  edges: GraphEdge[];
+  truncated: boolean;
+}
+
+export interface ProjectGraph {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
   truncated: boolean;
 }
 
@@ -212,4 +240,162 @@ export interface McpInfo {
   url: string;
   issuer: string;
   scopes: string[];
+}
+
+export interface Attachment {
+  id: string;
+  project_id: string;
+  filename: string;
+  content_type: string;
+  size: number;
+  uploaded_by: string;
+  task_id: string | null;
+  wiki_page_id: string | null;
+  url: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WikiRevisionSummary {
+  id: string;
+  page_id: string;
+  version: number;
+  title: string;
+  editor_id: string;
+  note: string;
+  created_at: string;
+}
+
+export interface DiffLine {
+  kind: "equal" | "add" | "del";
+  text: string;
+}
+
+export interface WikiRevisionDetail extends WikiRevisionSummary {
+  content: string;
+  aliases: string[];
+  page_type: PageType | null;
+  status: PageStatus | null;
+  tags: string[];
+  diff_to_current: DiffLine[];
+}
+
+export interface NotificationItem {
+  id: string;
+  user_id: string;
+  project_id: string;
+  actor_id: string;
+  kind: "mention" | "assigned" | "comment" | "ownership" | "invite";
+  title: string;
+  body: string;
+  link: string;
+  read: boolean;
+  created_at: string;
+}
+
+export interface NotificationList {
+  unread_count: number;
+  items: NotificationItem[];
+}
+
+export interface AuditLog {
+  id: string;
+  project_id: string;
+  actor_id: string;
+  action: string;
+  target_type: string;
+  target_id: string;
+  summary: string;
+  details: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface GlossaryTerm {
+  id: string;
+  project_id: string;
+  term: string;
+  definition: string;
+  synonyms: string[];
+  broader_id: string | null;
+  wiki_page_id: string | null;
+  created_by: string;
+  updated_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface GlossaryUsage {
+  source_type: "wiki" | "task";
+  source_id: string;
+  title: string;
+  number: number | null;
+  count: number;
+  snippets: string[];
+}
+
+export type EntityKind = "system" | "service" | "api" | "data" | "role" | "decision" | "concept";
+export type RelationKind = "uses" | "depends_on" | "produces" | "owns" | "implements" | "decides" | "relates_to";
+export type ReviewStatus = "pending" | "approved" | "rejected";
+
+export interface SourceRef {
+  source_type: "wiki" | "task" | "glossary";
+  source_id: string;
+  title: string;
+  excerpt: string;
+}
+
+export interface KnowledgeEntity {
+  id: string;
+  project_id: string;
+  name: string;
+  kind: EntityKind;
+  description: string;
+  aliases: string[];
+  status: ReviewStatus;
+  confidence: number;
+  sources: SourceRef[];
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  created_at: string;
+}
+
+export interface KnowledgeRelation {
+  id: string;
+  project_id: string;
+  source_entity_id: string;
+  target_entity_id: string;
+  kind: RelationKind;
+  evidence: string;
+  source_ref: SourceRef | null;
+  status: ReviewStatus;
+  confidence: number;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  created_at: string;
+}
+
+export interface ExtractResult {
+  entities_added: number;
+  relations_added: number;
+  pending_entities: number;
+  pending_relations: number;
+}
+
+export interface QACitation {
+  kind: "wiki" | "task" | "glossary" | "entity";
+  id: string;
+  title: string;
+  snippet: string;
+  number: number | null;
+  link: string;
+}
+
+export interface QAResponse {
+  question: string;
+  answer: string;
+  expanded_terms: string[];
+  citations: QACitation[];
+  related_facts: string[];
+  graph_nodes: GraphNode[];
+  graph_edges: GraphEdge[];
 }

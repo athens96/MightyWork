@@ -1,16 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
-import { membersApi, wikiApi } from "../../api";
-import { ApiError } from "../../api/http";
-import type { LocalGraph, PageLinks, UnlinkedMention, User, WikiPage as WikiPageType, WikiPageSummary } from "../../types";
+import { attachmentsApi, membersApi, wikiApi } from "../../api";
+import { ApiError, saveBlob } from "../../api/http";
+import type { Attachment, LocalGraph, PageLinks, UnlinkedMention, User, WikiPage as WikiPageType, WikiPageSummary } from "../../types";
 import { LocalGraphView } from "./LocalGraphView";
 import { ExportMenu } from "./ExportMenu";
 import { PropertiesBar, PropertiesEditor } from "./pageProps";
+import { WikiHistoryDrawer } from "./WikiHistoryDrawer";
 import { WikiIndex } from "./WikiIndex";
 import { useCurrentProject } from "../projects/ProjectLayout";
-import { ChevronIcon, EditIcon, PlusIcon, TrashIcon } from "../../components/icons";
+import { EditorSuggestBar, useEditorSuggest } from "../../components/EditorSuggest";
+import { ChevronIcon, EditIcon, HistoryIcon, PaperclipIcon, PlusIcon, TrashIcon } from "../../components/icons";
 import { Markdown } from "../../components/Markdown";
 import { can } from "../../lib/permissions";
+import { extractImageFile, insertUploadedImage } from "../../lib/editorUpload";
 import { timeAgo } from "../../lib/time";
 import { useLinkResolver } from "../../lib/useLinkResolver";
 import { STAGE_TONE } from "../tasks/tones";
@@ -35,7 +38,14 @@ export function WikiPage() {
   const [graph, setGraph] = useState<LocalGraph | null>(null);
   const [graphDepth, setGraphDepth] = useState<1 | 2>(1);
   const fileInput = useRef<HTMLInputElement>(null);
+  const imageInput = useRef<HTMLInputElement>(null);
+  const attInput = useRef<HTMLInputElement>(null);
+  const editorRef = useRef<HTMLTextAreaElement>(null);
+  const [editorCursor, setEditorCursor] = useState(0);
   const [importing, setImporting] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const suggest = useEditorSuggest(draft.content, editorCursor, pages, members);
 
   // HWP·HWPX·DOCX·PDF·Markdown 파일 → 새 위키 페이지
   const importFile = async (file: File | undefined) => {
@@ -106,6 +116,7 @@ export function WikiPage() {
         wikiApi.links(project.id, id).then(setLinks, () => setLinks(null)),
         wikiApi.unlinkedMentions(project.id, id).then(setMentions, () => setMentions([])),
         wikiApi.graph(project.id, id, graphDepth).then(setGraph, () => setGraph(null)),
+        attachmentsApi.list(project.id, { wiki_page_id: id }).then(setAttachments, () => setAttachments([])),
       ]),
     [project.id, graphDepth],
   );
@@ -219,6 +230,9 @@ export function WikiPage() {
                 <span className="current">{page.title}</span>
               </nav>
               <ExportMenu projectId={project.id} pageId={page.id} hasChildren={pages.some((p) => p.parent_id === page.id)} />
+              <button className="btn btn-sm" onClick={() => setHistoryOpen(true)} title="버전 히스토리">
+                <HistoryIcon size={12} /> 히스토리
+              </button>
               {canCreate && (
                 <button className="btn btn-sm" onClick={() => createPage(page.id)}>
                   <PlusIcon size={10} /> 하위 페이지
@@ -256,11 +270,79 @@ export function WikiPage() {
               ) : (
                 <p className="muted">내용 없음{canEdit && " — 편집을 눌러 작성하세요."}</p>
               )}
+              {(attachments.length > 0 || canCreate) && (
+                <section className="wiki-attachments">
+                  <header className="section-head">
+                    <h3>
+                      <PaperclipIcon size={12} /> 첨부 파일 {attachments.length}
+                    </h3>
+                    <span className="spacer" />
+                    {canCreate && (
+                      <>
+                        <button className="btn btn-sm btn-ghost" onClick={() => attInput.current?.click()}>
+                          + 파일 첨부
+                        </button>
+                        <input
+                          ref={attInput}
+                          type="file"
+                          hidden
+                          onChange={async (e) => {
+                            const f = e.target.files?.[0];
+                            if (!f) return;
+                            try {
+                              const uploaded = await attachmentsApi.upload(project.id, f, { wiki_page_id: page.id });
+                              setAttachments((prev) => [uploaded, ...prev]);
+                            } catch (err) {
+                              alert(err instanceof ApiError ? String(err.detail) : "업로드 실패");
+                            }
+                            e.target.value = "";
+                          }}
+                        />
+                      </>
+                    )}
+                  </header>
+                  {attachments.length > 0 && (
+                    <div className="conn-group">
+                      {attachments.map((att) => (
+                        <span key={att.id} className="conn-chip att-chip">
+                          <button
+                            type="button"
+                            className="link-btn"
+                            onClick={async () => {
+                              const { blob, filename } = await attachmentsApi.download(project.id, att.id);
+                              saveBlob(blob, filename);
+                            }}
+                          >
+                            {att.filename} ({Math.max(1, Math.round(att.size / 1024))}KB)
+                          </button>
+                          {canDelete && (
+                            <button
+                              type="button"
+                              className="chip-del"
+                              title="삭제"
+                              onClick={async () => {
+                                if (!confirm(`'${att.filename}' 첨부를 삭제할까요?`)) return;
+                                await attachmentsApi.remove(project.id, att.id);
+                                setAttachments((prev) => prev.filter((x) => x.id !== att.id));
+                              }}
+                            >
+                              ×
+                            </button>
+                          )}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </section>
+              )}
               {graph && (
                 <section className="local-graph">
                   <header className="section-head">
                     <h3>로컬 그래프</h3>
                     <span className="spacer" />
+                    <Link to={`/projects/${project.id}/knowledge?tab=graph`} className="btn btn-sm btn-ghost">
+                      전체 그래프 →
+                    </Link>
                     <div className="segment">
                       {([1, 2] as const).map((d) => (
                         <button key={d} aria-pressed={graphDepth === d} onClick={() => setGraphDepth(d)}>
@@ -320,17 +402,56 @@ export function WikiPage() {
               />
             </div>
             <PropertiesEditor value={draft} onChange={(v) => setDraft({ ...draft, ...v })} members={members} />
+            <EditorSuggestBar
+              match={suggest.match}
+              items={suggest.items}
+              index={suggest.index}
+              value={draft.content}
+              onPick={(next, pos) => {
+                setDraft((d) => ({ ...d, content: next }));
+                setEditorCursor(pos);
+                requestAnimationFrame(() => editorRef.current?.setSelectionRange(pos, pos));
+              }}
+            />
             <div className="editor-split">
               <textarea
+                ref={editorRef}
                 value={draft.content}
-                onChange={(e) => setDraft({ ...draft, content: e.target.value })}
+                onChange={(e) => {
+                  setDraft({ ...draft, content: e.target.value });
+                  setEditorCursor(e.target.selectionStart ?? e.target.value.length);
+                }}
+                onSelect={(e) => setEditorCursor((e.target as HTMLTextAreaElement).selectionStart ?? 0)}
+                onPaste={(e) => {
+                  const img = extractImageFile(e.clipboardData);
+                  if (img) {
+                    e.preventDefault();
+                    insertUploadedImage(project.id, img, draft.content, editorRef.current, (content) => setDraft((d) => ({ ...d, content })));
+                  }
+                }}
+                onDrop={(e) => {
+                  const img = extractImageFile(e.dataTransfer);
+                  if (img) {
+                    e.preventDefault();
+                    insertUploadedImage(project.id, img, draft.content, editorRef.current, (content) => setDraft((d) => ({ ...d, content })));
+                  }
+                }}
                 onKeyDown={(e) => {
+                  if (
+                    suggest.handleKeyDown(e, (next, pos) => {
+                      setDraft((d) => ({ ...d, content: next }));
+                      setEditorCursor(pos);
+                      requestAnimationFrame(() => editorRef.current?.setSelectionRange(pos, pos));
+                    })
+                  ) {
+                    return;
+                  }
                   if ((e.metaKey || e.ctrlKey) && e.key === "s") {
                     e.preventDefault();
                     save();
                   }
                 }}
-                placeholder="Markdown으로 작성하세요"
+                placeholder="Markdown으로 작성하세요 ([[위키]] · @멘션 자동완성, 이미지 붙여넣기 지원)"
                 autoFocus
               />
               <div className="editor-preview">
@@ -344,6 +465,24 @@ export function WikiPage() {
                 <code>| 표 |</code> <code>```언어</code> <code>[링크](url)</code> <code>&gt; 인용</code> · 저장{" "}
                 <code>⌘S</code>
               </p>
+              {canCreate && (
+                <>
+                  <button type="button" className="btn btn-sm btn-ghost" onClick={() => imageInput.current?.click()}>
+                    이미지 첨부
+                  </button>
+                  <input
+                    ref={imageInput}
+                    type="file"
+                    hidden
+                    accept="image/png,image/jpeg,image/gif,image/webp"
+                    onChange={(e) => {
+                      const img = e.target.files?.[0];
+                      if (img) insertUploadedImage(project.id, img, draft.content, editorRef.current, (content) => setDraft((d) => ({ ...d, content })));
+                      e.target.value = "";
+                    }}
+                  />
+                </>
+              )}
               <button className="btn btn-ghost" onClick={() => setEditing(false)}>
                 취소
               </button>
@@ -354,6 +493,20 @@ export function WikiPage() {
           </div>
         )}
       </article>
+      {historyOpen && page && (
+        <WikiHistoryDrawer
+          projectId={project.id}
+          pageId={page.id}
+          users={members}
+          canEdit={canEdit}
+          onRestored={(restored) => {
+            setPage(restored);
+            reloadTree();
+            reloadLinks(restored.id);
+          }}
+          onClose={() => setHistoryOpen(false)}
+        />
+      )}
     </div>
   );
 }

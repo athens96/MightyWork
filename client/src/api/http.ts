@@ -21,18 +21,53 @@ export class ApiError extends Error {
   }
 }
 
-export async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const headers = new Headers(init.headers);
-  if (init.body !== undefined && !(init.body instanceof FormData)) headers.set("Content-Type", "application/json");
-  const token = tokenStorage.get();
-  if (token) headers.set("Authorization", `Bearer ${token}`);
+let refreshInFlight: Promise<string | null> | null = null;
 
-  const res = await fetch(BASE_URL + path, { ...init, headers });
+/** 만료된 액세스 토큰을 HttpOnly 리프레시 쿠키로 조용히 갱신 (동시 401 은 하나로 합침) */
+async function tryRefresh(): Promise<string | null> {
+  if (!refreshInFlight) {
+    refreshInFlight = fetch(BASE_URL + "/auth/refresh", { method: "POST", credentials: "include" })
+      .then(async (res) => {
+        if (!res.ok) return null;
+        const data = (await res.json()) as { access_token?: string };
+        if (!data.access_token) return null;
+        tokenStorage.set(data.access_token);
+        return data.access_token;
+      })
+      .catch(() => null)
+      .finally(() => {
+        refreshInFlight = null;
+      });
+  }
+  return refreshInFlight;
+}
 
+async function fetchWithAuth(path: string, init: RequestInit = {}): Promise<Response> {
+  const send = (token: string | null) => {
+    const headers = new Headers(init.headers);
+    if (init.body !== undefined && !(init.body instanceof FormData) && !headers.has("Content-Type")) {
+      headers.set("Content-Type", "application/json");
+    }
+    if (token) headers.set("Authorization", `Bearer ${token}`);
+    return fetch(BASE_URL + path, { ...init, credentials: "include", headers });
+  };
+
+  let res = await send(tokenStorage.get());
+  if (res.status === 401 && !path.startsWith("/auth/")) {
+    const nextToken = await tryRefresh();
+    if (nextToken) {
+      res = await send(nextToken);
+    }
+  }
   if (res.status === 401) {
     tokenStorage.clear();
     window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
   }
+  return res;
+}
+
+export async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const res = await fetchWithAuth(path, init);
   if (!res.ok) {
     const body = await res.json().catch(() => null);
     throw new ApiError(res.status, body?.detail ?? res.statusText);
@@ -42,21 +77,14 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
 
 export const http = {
   get: <T>(path: string) => request<T>(path),
-  post: <T>(path: string, body: unknown) => request<T>(path, { method: "POST", body: JSON.stringify(body) }),
+  post: <T>(path: string, body?: unknown) => request<T>(path, { method: "POST", body: body === undefined ? undefined : JSON.stringify(body) }),
   patch: <T>(path: string, body: unknown) => request<T>(path, { method: "PATCH", body: JSON.stringify(body) }),
   delete: (path: string) => request<void>(path, { method: "DELETE" }),
 };
 
 /** 파일 응답(Blob) + Content-Disposition 의 파일 이름 (RFC 5987 filename* 우선) */
 export async function requestFile(path: string, init: RequestInit = {}): Promise<{ blob: Blob; filename: string }> {
-  const headers = new Headers(init.headers);
-  const token = tokenStorage.get();
-  if (token) headers.set("Authorization", `Bearer ${token}`);
-  const res = await fetch(BASE_URL + path, { ...init, headers });
-  if (res.status === 401) {
-    tokenStorage.clear();
-    window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
-  }
+  const res = await fetchWithAuth(path, init);
   if (!res.ok) {
     const body = await res.json().catch(() => null);
     throw new ApiError(res.status, body?.detail ?? res.statusText);

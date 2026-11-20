@@ -2,40 +2,77 @@ import { http, requestFile, upload } from "./http";
 
 export type ExportFormat = "md" | "html" | "docx" | "hwpx" | "hwp";
 import type {
+  Attachment,
+  AuditLog,
   Comment,
   ConsentRequest,
-  McpInfo,
-  OAuthGrant,
-  Member,
+  EntityKind,
+  ExtractResult,
+  GlossaryTerm,
+  GlossaryUsage,
+  KnowledgeEntity,
+  KnowledgeRelation,
   LocalGraph,
+  McpInfo,
+  Member,
+  NotificationItem,
+  NotificationList,
+  OAuthGrant,
   PageLinks,
-  SearchHit,
-  UnlinkedMention,
   Permission,
   PipelineStage,
   PipelineStageInfo,
   Project,
   ProjectCreate,
+  ProjectGraph,
   ProjectUpdate,
+  QAResponse,
+  RelationKind,
+  ReviewStatus,
+  SearchHit,
   Task,
   TaskActivity,
   TaskCreate,
+  TaskLink,
+  TaskLinkKind,
   TaskUpdate,
   TokenResponse,
+  UnlinkedMention,
   User,
   WikiPage,
   WikiPageCreate,
   WikiPageSummary,
   WikiPageUpdate,
+  WikiRevisionDetail,
+  WikiRevisionSummary,
 } from "../types";
 
 export const authApi = {
   loginWithGoogle: (credential: string) => http.post<TokenResponse>("/auth/google", { credential }),
+  refresh: () => http.post<TokenResponse>("/auth/refresh"),
+  logout: () => http.post<void>("/auth/logout"),
   me: () => http.get<User>("/auth/me"),
 };
 
 export const usersApi = {
   list: () => http.get<User[]>("/users"),
+  listByProject: (projectId: string) => http.get<User[]>(`/projects/${projectId}/users`),
+};
+
+export const attachmentsApi = {
+  list: (projectId: string, params: { task_id?: string; wiki_page_id?: string } = {}) => {
+    const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v) as [string, string][]);
+    return http.get<Attachment[]>(`/projects/${projectId}/attachments${qs.size ? `?${qs}` : ""}`);
+  },
+  upload: (projectId: string, file: File, opts: { task_id?: string; wiki_page_id?: string } = {}) => {
+    const form = new FormData();
+    form.append("file", file);
+    if (opts.task_id) form.append("task_id", opts.task_id);
+    if (opts.wiki_page_id) form.append("wiki_page_id", opts.wiki_page_id);
+    return upload<Attachment>(`/projects/${projectId}/attachments`, form);
+  },
+  download: (projectId: string, id: string) => requestFile(`/projects/${projectId}/attachments/${id}`),
+  remove: (projectId: string, id: string) => http.delete(`/projects/${projectId}/attachments/${id}`),
 };
 
 export const projectsApi = {
@@ -44,15 +81,28 @@ export const projectsApi = {
   create: (body: ProjectCreate) => http.post<Project>("/projects", body),
   update: (id: string, body: ProjectUpdate) => http.patch<Project>(`/projects/${id}`, body),
   remove: (id: string) => http.delete(`/projects/${id}`),
+  transferOwnership: (id: string, newOwnerUserId: string) =>
+    http.post<Project>(`/projects/${id}/transfer-ownership`, { new_owner_user_id: newOwnerUserId }),
+  auditLogs: (id: string, action?: string) => {
+    const qs = action ? `?${new URLSearchParams({ action })}` : "";
+    return http.get<AuditLog[]>(`/projects/${id}/audit-logs${qs}`);
+  },
 };
 
 export const membersApi = {
   list: (projectId: string) => http.get<Member[]>(`/projects/${projectId}/members`),
-  add: (projectId: string, email: string, permissions: Permission[]) =>
-    http.post<Member>(`/projects/${projectId}/members`, { email, permissions }),
+  add: (projectId: string, email: string, permissions: Permission[], sendInvite = true) =>
+    http.post<Member>(`/projects/${projectId}/members`, { email, permissions, send_invite: sendInvite }),
+  resendInvite: (projectId: string, id: string) => http.post<Member>(`/projects/${projectId}/members/${id}/resend-invite`),
   update: (projectId: string, id: string, permissions: Permission[]) =>
     http.patch<Member>(`/projects/${projectId}/members/${id}`, { permissions }),
   remove: (projectId: string, id: string) => http.delete(`/projects/${projectId}/members/${id}`),
+};
+
+export const notificationsApi = {
+  list: (unreadOnly = false) => http.get<NotificationList>(`/notifications${unreadOnly ? "?unread_only=true" : ""}`),
+  markRead: (id: string) => http.post<NotificationItem>(`/notifications/${id}/read`),
+  markAllRead: () => http.post<{ updated: number }>("/notifications/read-all"),
 };
 
 export const pipelineApi = {
@@ -60,7 +110,7 @@ export const pipelineApi = {
 };
 
 export const tasksApi = {
-  list: (projectId: string, params: { stage?: PipelineStage; assignee_id?: string } = {}) => {
+  list: (projectId: string, params: { stage?: PipelineStage; assignee_id?: string; parent_id?: string } = {}) => {
     const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v) as [string, string][]);
     return http.get<Task[]>(`/projects/${projectId}/tasks${qs.size ? `?${qs}` : ""}`);
   },
@@ -69,9 +119,17 @@ export const tasksApi = {
   update: (projectId: string, id: string, body: TaskUpdate) =>
     http.patch<Task>(`/projects/${projectId}/tasks/${id}`, body),
   remove: (projectId: string, id: string) => http.delete(`/projects/${projectId}/tasks/${id}`),
+  subtasks: (projectId: string, id: string) => http.get<Task[]>(`/projects/${projectId}/tasks/${id}/subtasks`),
+  links: (projectId: string, id: string) => http.get<TaskLink[]>(`/projects/${projectId}/tasks/${id}/links`),
+  addLink: (projectId: string, id: string, targetId: string, kind: TaskLinkKind) =>
+    http.post<TaskLink>(`/projects/${projectId}/tasks/${id}/links`, { target_id: targetId, kind }),
+  removeLink: (projectId: string, id: string, linkId: string) =>
+    http.delete(`/projects/${projectId}/tasks/${id}/links/${linkId}`),
   activity: (projectId: string, id: string) =>
     http.get<TaskActivity[]>(`/projects/${projectId}/tasks/${id}/activity`),
   wikiRefs: (projectId: string, id: string) => http.get<WikiPageSummary[]>(`/projects/${projectId}/tasks/${id}/wiki-refs`),
+  wikiLinks: (projectId: string, id: string) =>
+    http.get<{ title: string; page_id: string | null }[]>(`/projects/${projectId}/tasks/${id}/wiki-links`),
 };
 
 export const searchApi = {
@@ -98,6 +156,11 @@ export const wikiApi = {
   update: (projectId: string, id: string, body: WikiPageUpdate) =>
     http.patch<WikiPage>(`/projects/${projectId}/wiki/pages/${id}`, body),
   remove: (projectId: string, id: string) => http.delete(`/projects/${projectId}/wiki/pages/${id}`),
+  revisions: (projectId: string, id: string) => http.get<WikiRevisionSummary[]>(`/projects/${projectId}/wiki/pages/${id}/revisions`),
+  revision: (projectId: string, id: string, revId: string) =>
+    http.get<WikiRevisionDetail>(`/projects/${projectId}/wiki/pages/${id}/revisions/${revId}`),
+  restore: (projectId: string, id: string, revId: string) =>
+    http.post<WikiPage>(`/projects/${projectId}/wiki/pages/${id}/revisions/${revId}/restore`),
   links: (projectId: string, id: string) => http.get<PageLinks>(`/projects/${projectId}/wiki/pages/${id}/links`),
   export: (projectId: string, id: string, opts: { format: ExportFormat; children?: boolean; preset?: string; print?: boolean }) => {
     const qs = new URLSearchParams({ format: opts.format });
@@ -119,6 +182,47 @@ export const wikiApi = {
     http.get<UnlinkedMention[]>(`/projects/${projectId}/wiki/pages/${id}/unlinked-mentions`),
   linkMentions: (projectId: string, id: string, sources: Pick<UnlinkedMention, "source_type" | "source_id">[]) =>
     http.post<{ linked: number; documents: number }>(`/projects/${projectId}/wiki/pages/${id}/unlinked-mentions/link`, { sources }),
+};
+
+export const knowledgeApi = {
+  fullGraph: (projectId: string, includeKnowledge = true) =>
+    http.get<ProjectGraph>(`/projects/${projectId}/graph?include_knowledge=${includeKnowledge}`),
+  listGlossary: (projectId: string, q?: string) =>
+    http.get<GlossaryTerm[]>(`/projects/${projectId}/glossary${q ? `?${new URLSearchParams({ q })}` : ""}`),
+  createGlossary: (
+    projectId: string,
+    body: { term: string; definition?: string; synonyms?: string[]; broader_id?: string | null; wiki_page_id?: string | null },
+  ) => http.post<GlossaryTerm>(`/projects/${projectId}/glossary`, body),
+  updateGlossary: (
+    projectId: string,
+    id: string,
+    body: { term?: string; definition?: string; synonyms?: string[]; broader_id?: string | null; wiki_page_id?: string | null },
+  ) => http.patch<GlossaryTerm>(`/projects/${projectId}/glossary/${id}`, body),
+  deleteGlossary: (projectId: string, id: string) => http.delete(`/projects/${projectId}/glossary/${id}`),
+  glossaryUsages: (projectId: string, id: string) => http.get<GlossaryUsage[]>(`/projects/${projectId}/glossary/${id}/usages`),
+  extract: (projectId: string) => http.post<ExtractResult>(`/projects/${projectId}/knowledge/extract`),
+  listEntities: (projectId: string, status?: ReviewStatus) =>
+    http.get<KnowledgeEntity[]>(`/projects/${projectId}/knowledge/entities${status ? `?status=${status}` : ""}`),
+  createEntity: (
+    projectId: string,
+    body: { name: string; kind: EntityKind; description?: string; aliases?: string[]; status?: ReviewStatus },
+  ) => http.post<KnowledgeEntity>(`/projects/${projectId}/knowledge/entities`, body),
+  updateEntity: (
+    projectId: string,
+    id: string,
+    body: { name?: string; kind?: EntityKind; description?: string; aliases?: string[]; status?: ReviewStatus },
+  ) => http.patch<KnowledgeEntity>(`/projects/${projectId}/knowledge/entities/${id}`, body),
+  deleteEntity: (projectId: string, id: string) => http.delete(`/projects/${projectId}/knowledge/entities/${id}`),
+  listRelations: (projectId: string, status?: ReviewStatus) =>
+    http.get<KnowledgeRelation[]>(`/projects/${projectId}/knowledge/relations${status ? `?status=${status}` : ""}`),
+  createRelation: (
+    projectId: string,
+    body: { source_entity_id: string; target_entity_id: string; kind: RelationKind; evidence?: string; status?: ReviewStatus },
+  ) => http.post<KnowledgeRelation>(`/projects/${projectId}/knowledge/relations`, body),
+  updateRelation: (projectId: string, id: string, body: { kind?: RelationKind; evidence?: string; status?: ReviewStatus }) =>
+    http.patch<KnowledgeRelation>(`/projects/${projectId}/knowledge/relations/${id}`, body),
+  deleteRelation: (projectId: string, id: string) => http.delete(`/projects/${projectId}/knowledge/relations/${id}`),
+  qa: (projectId: string, question: string) => http.post<QAResponse>(`/projects/${projectId}/knowledge/qa`, { question }),
 };
 
 export const oauthApi = {

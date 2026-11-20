@@ -42,11 +42,28 @@ def search(db: Database, project: Project, query: str, limit: int = 30) -> list[
     hits: list[SearchHit] = []
 
     key_match = re.fullmatch(rf"{re.escape(project.key.casefold())}-(\d+)", q)
-    comments_by_task: dict[str, list[str]] = {}
-    for c in db.comments.list(lambda c: c.project_id == project.id):
-        comments_by_task.setdefault(c.task_id, []).append(c.body)
+    candidates = db.search_candidates(project.id, q)
 
-    for t in db.tasks.list(lambda t: t.project_id == project.id):
+    if candidates is not None:
+        task_ids, wiki_ids = candidates
+        if key_match:
+            target_num = int(key_match.group(1))
+            for t in db.tasks.list(lambda t: t.project_id == project.id and t.number == target_num):
+                task_ids.add(t.id)
+        tasks = [t for tid in task_ids if (t := db.tasks.get(tid)) is not None and t.project_id == project.id]
+        pages = [p for pid in wiki_ids if (p := db.wiki_pages.get(pid)) is not None and p.project_id == project.id]
+        comments_by_task: dict[str, list[str]] = {}
+        if task_ids:
+            for c in db.comments.list(lambda c: c.project_id == project.id and c.task_id in task_ids):
+                comments_by_task.setdefault(c.task_id, []).append(c.body)
+    else:
+        tasks = db.tasks.list(lambda t: t.project_id == project.id)
+        pages = db.wiki_pages.list(lambda p: p.project_id == project.id)
+        comments_by_task = {}
+        for c in db.comments.list(lambda c: c.project_id == project.id):
+            comments_by_task.setdefault(c.task_id, []).append(c.body)
+
+    for t in tasks:
         if key_match and int(key_match.group(1)) == t.number:
             score, body = 100.0, t.description  # 키로 정확히 찾으면 맨 위
         else:
@@ -65,7 +82,7 @@ def search(db: Database, project: Project, query: str, limit: int = 30) -> list[
         hits.append(SearchHit(kind="task", id=t.id, title=t.title, snippet=_snippet(body or t.description, q),
                               score=score, number=t.number, stage=t.stage.value))
 
-    for p in db.wiki_pages.list(lambda p: p.project_id == project.id):
+    for p in pages:
         score = 10.0 if q in p.title.casefold() else 8.0 if any(q in a.casefold() for a in p.aliases) else 0.0
         if any(q in t.casefold() for t in p.tags):
             score += 5

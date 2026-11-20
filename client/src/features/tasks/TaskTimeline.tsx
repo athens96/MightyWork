@@ -1,8 +1,9 @@
-import { useState, type KeyboardEvent } from "react";
+import { useRef, useState, type KeyboardEvent } from "react";
 import { Avatar } from "../../components/Avatar";
+import { EditorSuggestBar, useEditorSuggest } from "../../components/EditorSuggest";
 import { Markdown } from "../../components/Markdown";
 import { formatDate, timeAgo } from "../../lib/time";
-import type { Comment, PipelineStageInfo, Priority, TaskActivity, User } from "../../types";
+import type { Comment, PipelineStageInfo, Priority, TaskActivity, User, WikiPageSummary } from "../../types";
 import type { LinkResolver } from "../../lib/wikilinks";
 import { FIELD_LABEL, PRIORITY_LABEL } from "./tones";
 
@@ -10,6 +11,7 @@ interface Props {
   comments: Comment[];
   activity: TaskActivity[];
   users: User[];
+  pages?: WikiPageSummary[];
   stages: PipelineStageInfo[];
   meId: string | undefined;
   canComment: boolean; // 생성 권한
@@ -23,11 +25,14 @@ interface Props {
 type Entry = { at: string; comment?: Comment; act?: TaskActivity };
 
 /** 덧글 + 변경 이력 타임라인, 하단 덧글 입력창(컴포저) */
-export function TaskTimeline({ comments, activity, users, stages, meId, canComment, canModerate, links, onAdd, onEdit, onRemove }: Props) {
+export function TaskTimeline({ comments, activity, users, pages = [], stages, meId, canComment, canModerate, links, onAdd, onEdit, onRemove }: Props) {
   const [draft, setDraft] = useState("");
+  const [cursor, setCursor] = useState(0);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
   const [sending, setSending] = useState(false);
   const [editing, setEditing] = useState<{ id: string; body: string } | null>(null);
   const [show, setShow] = useState<"all" | "comments">("all");
+  const suggest = useEditorSuggest(draft, cursor, pages, users);
   const userOf = (id: string) => users.find((u) => u.id === id);
   const nameOf = (id: string) => userOf(id)?.name || userOf(id)?.email || "알 수 없음";
 
@@ -173,15 +178,42 @@ export function TaskTimeline({ comments, activity, users, stages, meId, canComme
         <p className="muted readonly-note">생성 권한이 있어야 덧글을 남길 수 있습니다.</p>
       ) : (
       <div className="composer">
-        <textarea
+        <EditorSuggestBar
+          match={suggest.match}
+          items={suggest.items}
+          index={suggest.index}
           value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => submitOnCmdEnter(e, submit)}
-          placeholder="덧글을 남기세요 (Markdown 지원)"
+          onPick={(next, pos) => {
+            setDraft(next);
+            setCursor(pos);
+            requestAnimationFrame(() => composerRef.current?.setSelectionRange(pos, pos));
+          }}
+        />
+        <textarea
+          ref={composerRef}
+          value={draft}
+          onChange={(e) => {
+            setDraft(e.target.value);
+            setCursor(e.target.selectionStart ?? e.target.value.length);
+          }}
+          onSelect={(e) => setCursor((e.target as HTMLTextAreaElement).selectionStart ?? 0)}
+          onKeyDown={(e) => {
+            if (
+              suggest.handleKeyDown(e, (next, pos) => {
+                setDraft(next);
+                setCursor(pos);
+                requestAnimationFrame(() => composerRef.current?.setSelectionRange(pos, pos));
+              })
+            ) {
+              return;
+            }
+            submitOnCmdEnter(e, submit);
+          }}
+          placeholder="덧글을 남기세요 ([[위키]], @멘션, Markdown 지원)"
           rows={3}
         />
         <div className="composer-foot">
-          <span className="muted hint">⌘ Enter 로 등록</span>
+          <span className="muted hint">@멘션 · [[위키]] 자동완성 · ⌘ Enter 로 등록</span>
           <span className="spacer" />
           <button className="btn btn-sm btn-primary" disabled={!draft.trim() || sending} onClick={submit}>
             덧글 남기기

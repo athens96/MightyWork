@@ -10,15 +10,28 @@ from app.models.task import (
     PipelineStageInfo,
     Task,
     TaskCreate,
+    TaskLink,
+    TaskLinkCreate,
+    TaskLinkKind,
+    TaskLinkRead,
     TaskRead,
     TaskUpdate,
 )
 from app.services.access import is_member_user
+from app.services.audit import record_audit
+from app.services.links import link_targets, norm_title, pages_by_title, project_pages
+from app.services.notifications import notify_mentions, notify_user
 from app.services.projects import allocate_task_number
 from app.services.tasks import delete_task_cascade, record_changes, record_created
 
 pipeline_router = APIRouter(tags=["tasks"])
 router = APIRouter(prefix="/projects/{project_id}/tasks", tags=["tasks"])
+
+_REVERSE_KIND = {
+    TaskLinkKind.BLOCKS: "blocked_by",
+    TaskLinkKind.RELATES_TO: "relates_to",
+    TaskLinkKind.DUPLICATES: "duplicated_by",
+}
 
 
 @pipeline_router.get("/pipeline", response_model=list[PipelineStageInfo])
@@ -32,10 +45,30 @@ def _ensure_assignee_is_member(db: Database, project: Project, assignee_id: str 
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Assignee must be a project member")
 
 
-def _read(db: Database, task: Task, comment_count: int | None = None) -> TaskRead:
+def _validate_parent(db: Database, project: Project, task_id: str | None, parent_id: str | None) -> None:
+    """상위 일감이 같은 프로젝트에 존재하는지, 순환이 생기지 않는지 확인."""
+    current = parent_id
+    while current is not None:
+        if current == task_id:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Task cannot be nested under itself")
+        parent = db.tasks.get(current)
+        if parent is None or parent.project_id != project.id:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Parent task not found")
+        current = parent.parent_id
+
+
+def _read(
+    db: Database,
+    task: Task,
+    comment_count: int | None = None,
+    subtask_stats: tuple[int, int] | None = None,
+) -> TaskRead:
     if comment_count is None:
         comment_count = len(db.comments.list(lambda c: c.task_id == task.id))
-    return TaskRead(**task.model_dump(), comment_count=comment_count)
+    if subtask_stats is None:
+        subs = db.tasks.list(lambda t: t.parent_id == task.id)
+        subtask_stats = (len(subs), sum(1 for s in subs if s.stage == PipelineStage.DONE))
+    return TaskRead(**task.model_dump(), comment_count=comment_count, subtask_count=subtask_stats[0], subtask_done=subtask_stats[1])
 
 
 @router.get("", response_model=list[TaskRead])
@@ -44,25 +77,69 @@ def list_tasks(
     db: DbDep,
     stage: PipelineStage | None = None,
     assignee_id: str | None = None,
+    parent_id: str | None = None,
 ) -> list[TaskRead]:
-    tasks = db.tasks.list(
-        lambda t: t.project_id == project.id
-        and (stage is None or t.stage == stage)
+    all_project_tasks = db.tasks.list(lambda t: t.project_id == project.id)
+    sub_counts: dict[str, list[int]] = {}
+    for t in all_project_tasks:
+        if t.parent_id:
+            pair = sub_counts.setdefault(t.parent_id, [0, 0])
+            pair[0] += 1
+            if t.stage == PipelineStage.DONE:
+                pair[1] += 1
+    tasks = [
+        t
+        for t in all_project_tasks
+        if (stage is None or t.stage == stage)
         and (assignee_id is None or t.assignee_id == assignee_id)
-    )
+        and (parent_id is None or t.parent_id == parent_id)
+    ]
     counts: dict[str, int] = {}
     for c in db.comments.list(lambda c: c.project_id == project.id):
         counts[c.task_id] = counts.get(c.task_id, 0) + 1
-    return [_read(db, t, counts.get(t.id, 0)) for t in sorted(tasks, key=lambda t: t.number)]
+    return [
+        _read(db, t, counts.get(t.id, 0), tuple(sub_counts.get(t.id, (0, 0))))
+        for t in sorted(tasks, key=lambda t: t.number)
+    ]
 
 
 @router.post("", response_model=TaskRead, status_code=status.HTTP_201_CREATED, dependencies=[require(Permission.CREATE)])
 def create_task(project: ProjectDep, body: TaskCreate, user: CurrentUser, db: DbDep) -> TaskRead:
     _ensure_assignee_is_member(db, project, body.assignee_id)
+    _validate_parent(db, project, None, body.parent_id)
     number = allocate_task_number(db, project.id)
     task = db.tasks.create(Task(**body.model_dump(), project_id=project.id, number=number, created_by=user.id))
     record_created(db, task, user.id)
-    return _read(db, task, 0)
+    link = f"/projects/{project.id}/tasks/{task.id}"
+    key = f"{project.key}-{task.number}"
+    if task.assignee_id:
+        notify_user(
+            db,
+            user_id=task.assignee_id,
+            project_id=project.id,
+            actor_id=user.id,
+            kind="assigned",
+            title=f"{key} '{task.title}' 일감이 배정되었습니다",
+            link=link,
+        )
+    notify_mentions(
+        db,
+        project=project,
+        actor=user,
+        text=task.description,
+        title=f"{key} '{task.title}' 설명에서 나를 언급했습니다",
+        link=link,
+    )
+    record_audit(
+        db,
+        project_id=project.id,
+        actor_id=user.id,
+        action="task.created",
+        target_type="task",
+        target_id=task.id,
+        summary=f"{key} {task.title} 생성",
+    )
+    return _read(db, task, 0, (0, 0))
 
 
 @router.get("/{task_id}", response_model=TaskRead)
@@ -74,13 +151,108 @@ def get_task(task: TaskDep, db: DbDep) -> TaskRead:
 def update_task(project: ProjectDep, task: TaskDep, body: TaskUpdate, user: CurrentUser, db: DbDep) -> TaskRead:
     if "assignee_id" in body.model_fields_set:
         _ensure_assignee_is_member(db, project, body.assignee_id)
+    if "parent_id" in body.model_fields_set:
+        _validate_parent(db, project, task.id, body.parent_id)
     updated = apply_patch(task, body)
     db.tasks.update(updated)
     record_changes(db, task, updated, user.id)
+    link = f"/projects/{project.id}/tasks/{updated.id}"
+    key = f"{project.key}-{updated.number}"
+    if updated.assignee_id and updated.assignee_id != task.assignee_id:
+        notify_user(
+            db,
+            user_id=updated.assignee_id,
+            project_id=project.id,
+            actor_id=user.id,
+            kind="assigned",
+            title=f"{key} '{updated.title}' 일감이 배정되었습니다",
+            link=link,
+        )
+    if updated.description != task.description:
+        notify_mentions(
+            db,
+            project=project,
+            actor=user,
+            text=updated.description,
+            title=f"{key} '{updated.title}' 설명에서 나를 언급했습니다",
+            link=link,
+        )
     return _read(db, updated)
 
 
 @router.delete("/{task_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[require(Permission.DELETE)])
-def delete_task(task: TaskDep, db: DbDep) -> Response:
+def delete_task(project: ProjectDep, task: TaskDep, user: CurrentUser, db: DbDep) -> Response:
+    key = f"{project.key}-{task.number}"
     delete_task_cascade(db, task.id)
+    record_audit(
+        db,
+        project_id=project.id,
+        actor_id=user.id,
+        action="task.deleted",
+        target_type="task",
+        target_id=task.id,
+        summary=f"{key} {task.title} 삭제",
+    )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# ---------------------------------------------------------------- 하위 일감 · 일감 간 링크 · 위키 링크
+
+
+@router.get("/{task_id}/subtasks", response_model=list[TaskRead])
+def list_subtasks(task: TaskDep, db: DbDep) -> list[TaskRead]:
+    subs = sorted(db.tasks.list(lambda t: t.parent_id == task.id), key=lambda t: t.number)
+    return [_read(db, s) for s in subs]
+
+
+@router.get("/{task_id}/links", response_model=list[TaskLinkRead])
+def list_task_links(task: TaskDep, db: DbDep) -> list[TaskLinkRead]:
+    links = db.task_links.list(lambda l: l.source_id == task.id or l.target_id == task.id)
+    out: list[TaskLinkRead] = []
+    for l in sorted(links, key=lambda x: x.created_at):
+        is_src = l.source_id == task.id
+        other_id = l.target_id if is_src else l.source_id
+        other = db.tasks.get(other_id)
+        if other is None:
+            continue
+        kind = l.kind.value if is_src else _REVERSE_KIND[l.kind]
+        out.append(TaskLinkRead(id=l.id, kind=kind, task_id=other.id, number=other.number, title=other.title, stage=other.stage))
+    return out
+
+
+@router.post("/{task_id}/links", response_model=TaskLinkRead, status_code=status.HTTP_201_CREATED, dependencies=[require(Permission.EDIT)])
+def create_task_link(project: ProjectDep, task: TaskDep, body: TaskLinkCreate, user: CurrentUser, db: DbDep) -> TaskLinkRead:
+    if body.target_id == task.id:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Cannot link a task to itself")
+    target = db.tasks.get(body.target_id)
+    if target is None or target.project_id != project.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Target task not found")
+    # 중복 검사 (relates_to 는 양방향 동일 취급)
+    for l in db.task_links.list(lambda x: x.project_id == project.id):
+        same_dir = l.source_id == task.id and l.target_id == target.id and l.kind == body.kind
+        sym_dup = body.kind == TaskLinkKind.RELATES_TO and l.kind == TaskLinkKind.RELATES_TO and l.source_id == target.id and l.target_id == task.id
+        if same_dir or sym_dup:
+            raise HTTPException(status.HTTP_409_CONFLICT, "Task link already exists")
+    created = db.task_links.create(
+        TaskLink(project_id=project.id, source_id=task.id, target_id=target.id, kind=body.kind, created_by=user.id)
+    )
+    return TaskLinkRead(id=created.id, kind=created.kind.value, task_id=target.id, number=target.number, title=target.title, stage=target.stage)
+
+
+@router.delete("/{task_id}/links/{link_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[require(Permission.EDIT)])
+def delete_task_link(project: ProjectDep, task: TaskDep, link_id: str, db: DbDep) -> Response:
+    link = db.task_links.get(link_id)
+    if link is None or link.project_id != project.id or task.id not in (link.source_id, link.target_id):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Task link not found")
+    db.task_links.delete(link.id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/{task_id}/wiki-links")
+def task_outgoing_wiki_links(project: ProjectDep, task: TaskDep, db: DbDep) -> list[dict[str, str | None]]:
+    """일감 설명에서 [[링크]] 로 가리킨 위키 문서들 (양방향 일감↔위키 연결)."""
+    by_title = pages_by_title(project_pages(db, project))
+    return [
+        {"title": title, "page_id": (p.id if (p := by_title.get(norm_title(title))) else None)}
+        for title in link_targets(task.description)
+    ]

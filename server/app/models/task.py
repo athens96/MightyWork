@@ -42,11 +42,44 @@ class ChecklistItem(BaseModel):
     done: bool = False
 
 
+class TaskLinkKind(str, Enum):
+    """일감 간 관계 (저장 방향 기준)."""
+
+    BLOCKS = "blocks"  # source 가 target 을 차단
+    RELATES_TO = "relates_to"  # 관련 일감 (대칭)
+    DUPLICATES = "duplicates"  # source 가 target 의 중복
+
+
+class TaskLink(Entity):
+    project_id: str
+    source_id: str
+    target_id: str
+    kind: TaskLinkKind
+    created_by: str
+
+
+class TaskLinkCreate(BaseModel):
+    target_id: str
+    kind: TaskLinkKind = TaskLinkKind.RELATES_TO
+
+
+class TaskLinkRead(BaseModel):
+    """현재 일감 관점에서 본 연결 정보 (역방향은 blocked_by / duplicated_by 로 표기)."""
+
+    id: str
+    kind: str  # blocks | blocked_by | relates_to | duplicates | duplicated_by
+    task_id: str
+    number: int
+    title: str
+    stage: PipelineStage
+
+
 class TaskBase(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     description: str = ""  # Markdown
     stage: PipelineStage = PipelineStage.BACKLOG
     priority: Priority = Priority.MEDIUM
+    parent_id: str | None = None  # 상위 일감 (하위 일감 트리)
     assignee_id: str | None = None  # 작업자
     tags: list[str] = []  # 레이블
     start_date: date | None = None  # 시작일
@@ -71,6 +104,8 @@ class TaskRead(Task):
     """응답용: 저장하지 않는 계산 필드 포함."""
 
     comment_count: int = 0
+    subtask_count: int = 0
+    subtask_done: int = 0
 
 
 class TaskCreate(TaskBase):
@@ -84,6 +119,7 @@ class TaskUpdate(BaseModel):
     description: str | None = None
     stage: PipelineStage | None = None
     priority: Priority | None = None
+    parent_id: str | None = None
     assignee_id: str | None = None
     tags: list[str] | None = None
     start_date: date | None = None

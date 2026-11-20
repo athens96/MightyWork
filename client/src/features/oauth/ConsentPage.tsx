@@ -83,9 +83,11 @@ export function ConsentPage() {
               <label>
                 <input type="checkbox" checked disabled /> {req.scope_labels[READ]}
               </label>
-              <label>
-                <input type="checkbox" checked={allowWrite} onChange={(e) => setAllowWrite(e.target.checked)} /> {req.scope_labels[WRITE]}
-              </label>
+              {req.requested_scopes.includes(WRITE) && (
+                <label>
+                  <input type="checkbox" checked={allowWrite} onChange={(e) => setAllowWrite(e.target.checked)} /> {req.scope_labels[WRITE]}
+                </label>
+              )}
               <p className="muted consent-note">
                 앱은 내가 멤버인 프로젝트에서, 내 프로젝트 권한 안에서만 동작합니다. '연결된 앱'에서 언제든 해제할 수 있습니다.
               </p>

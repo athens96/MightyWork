@@ -87,3 +87,38 @@ class WikiPageSummary(BaseModel):
     owner_id: str | None = None
     tags: list[str] = []
     updated_at: datetime
+
+
+class WikiRevision(Entity):
+    """위키 페이지 버전 스냅샷."""
+
+    project_id: str
+    page_id: str
+    version: int
+    title: str
+    content: str
+    aliases: list[str] = []
+    page_type: PageType | None = None
+    status: PageStatus | None = None
+    tags: list[str] = []
+    editor_id: str
+    note: str = ""
+
+
+class WikiRevisionSummary(BaseModel):
+    id: str
+    page_id: str
+    version: int
+    title: str
+    editor_id: str
+    note: str
+    created_at: datetime
+
+
+class DiffLine(BaseModel):
+    kind: str  # "equal" | "add" | "del"
+    text: str
+
+
+class WikiRevisionDetail(WikiRevision):
+    diff_to_current: list[DiffLine] = []

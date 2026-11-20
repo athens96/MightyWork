@@ -1,3 +1,4 @@
+import type { DragEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { Avatar } from "../../components/Avatar";
 import { CheckSquareIcon, CommentIcon } from "../../components/icons";
@@ -12,6 +13,10 @@ interface Props {
   assignee: User | undefined;
   stages: PipelineStageInfo[];
   selected: boolean;
+  draggable?: boolean;
+  dragging?: boolean;
+  onDragStart?: (e: DragEvent<HTMLElement>) => void;
+  onDragEnd?: () => void;
 }
 
 const DUE_TONE = { overdue: "tone-err", soon: "tone-wait", ok: "" } as const;
@@ -29,7 +34,7 @@ function firstLine(md: string): string | undefined {
  * 머리줄(톤 표시·키·활동 막대·상태·추정치) → 제목 → 미리보기(다음 할 일/설명) → 작업자·배지.
  * 진행 중이면 run 색 점선이 흐르는 외곽선 + 후광.
  */
-export function TaskCard({ task, taskKey, href, assignee, stages, selected }: Props) {
+export function TaskCard({ task, taskKey, href, assignee, stages, selected, draggable, dragging, onDragStart, onDragEnd }: Props) {
   const navigate = useNavigate();
   const priority = PRIORITY_META[task.priority];
   const running = task.stage === "in_progress";
@@ -41,9 +46,12 @@ export function TaskCard({ task, taskKey, href, assignee, stages, selected }: Pr
 
   return (
     <article
-      className={`task-card ${STAGE_TONE[task.stage]} ${running ? "is-running" : ""} ${selected ? "selected" : ""}`}
+      className={`task-card ${STAGE_TONE[task.stage]} ${running ? "is-running" : ""} ${selected ? "selected" : ""} ${dragging ? "is-dragging" : ""}`}
       role="button"
       tabIndex={0}
+      draggable={draggable}
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
       onClick={() => navigate(href)}
       onKeyDown={(e) => e.key === "Enter" && navigate(href)}
     >
@@ -73,6 +81,11 @@ export function TaskCard({ task, taskKey, href, assignee, stages, selected }: Pr
           <Avatar user={assignee} size={18} />
           <span className="task-who">{assignee ? assignee.name || assignee.email : "미지정"}</span>
           <span className="spacer" />
+          {task.subtask_count > 0 && (
+            <span className={`badge ${task.subtask_done === task.subtask_count ? "tone-done" : ""}`} title="하위 일감">
+              ↳ {task.subtask_done}/{task.subtask_count}
+            </span>
+          )}
           {task.checklist.length > 0 && (
             <span className={`badge ${doneItems === task.checklist.length ? "tone-done" : ""}`} title="할 일">
               <CheckSquareIcon size={11} /> {doneItems}/{task.checklist.length}

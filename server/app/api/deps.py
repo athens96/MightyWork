@@ -14,6 +14,7 @@ from app.models.project import Project
 from app.models.task import Task
 from app.models.user import User
 from app.services.access import Access, resolve_access
+from app.services.email import InviteSender, send_invite_email
 from app.services.google_auth import GoogleVerifier, verify_google_credential
 
 _bearer = HTTPBearer(auto_error=False)
@@ -30,6 +31,11 @@ def get_db(request: Request) -> Database:
 def get_google_verifier() -> GoogleVerifier:
     """테스트에서 dependency_overrides 로 교체할 수 있도록 분리."""
     return verify_google_credential
+
+
+def get_invite_sender() -> InviteSender:
+    """테스트에서 dependency_overrides 로 교체할 수 있도록 분리."""
+    return send_invite_email
 
 
 def get_current_user(

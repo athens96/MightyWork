@@ -2,11 +2,24 @@ from fastapi import APIRouter, HTTPException, Query, Response, status
 
 from app.api.deps import CurrentUser, DbDep, ProjectDep, apply_patch, require
 from app.db import Database
+from app.models.common import utcnow
 from app.models.member import Permission
 from app.models.project import Project
-from app.models.wiki import PageStatus, PageType, WikiPage, WikiPageCreate, WikiPageSummary, WikiPageUpdate
+from app.models.wiki import (
+    PageStatus,
+    PageType,
+    WikiPage,
+    WikiPageCreate,
+    WikiPageSummary,
+    WikiPageUpdate,
+    WikiRevisionDetail,
+    WikiRevisionSummary,
+)
 from app.services.access import is_member_user
+from app.services.audit import record_audit
 from app.services.links import propagate_rename
+from app.services.notifications import notify_mentions
+from app.services.wiki_revisions import line_diff, list_revisions, record_revision
 
 router = APIRouter(prefix="/projects/{project_id}/wiki/pages", tags=["wiki"])
 
@@ -60,9 +73,28 @@ def list_pages(
 def create_page(project: ProjectDep, body: WikiPageCreate, user: CurrentUser, db: DbDep) -> WikiPage:
     _validate_parent(db, project, None, body.parent_id)
     _ensure_owner_is_member(db, project, body.owner_id)
-    return db.wiki_pages.create(
+    page = db.wiki_pages.create(
         WikiPage(**body.model_dump(), project_id=project.id, created_by=user.id, updated_by=user.id)
     )
+    record_revision(db, page, user.id, note="초기 작성")
+    notify_mentions(
+        db,
+        project=project,
+        actor=user,
+        text=page.content,
+        title=f"위키 '{page.title}' 에서 나를 언급했습니다",
+        link=f"/projects/{project.id}/wiki/{page.id}",
+    )
+    record_audit(
+        db,
+        project_id=project.id,
+        actor_id=user.id,
+        action="wiki.created",
+        target_type="wiki",
+        target_id=page.id,
+        summary=f"위키 '{page.title}' 생성",
+    )
+    return page
 
 
 @router.get("/{page_id}", response_model=WikiPage)
@@ -79,14 +111,95 @@ def update_page(project: ProjectDep, page_id: str, body: WikiPageUpdate, user: C
         _ensure_owner_is_member(db, project, body.owner_id)
     updated = apply_patch(page, body, updated_by=user.id)
     db.wiki_pages.update(updated)
+    if (
+        updated.title != page.title
+        or updated.content != page.content
+        or updated.aliases != page.aliases
+        or updated.page_type != page.page_type
+        or updated.status != page.status
+        or updated.tags != page.tags
+    ):
+        record_revision(db, updated, user.id)
+    if updated.content != page.content:
+        notify_mentions(
+            db,
+            project=project,
+            actor=user,
+            text=updated.content,
+            title=f"위키 '{updated.title}' 에서 나를 언급했습니다",
+            link=f"/projects/{project.id}/wiki/{updated.id}",
+        )
     propagate_rename(db, project, updated, page.title)  # 다른 문서의 [[옛 제목]] → [[새 제목]]
     return updated
 
 
 @router.delete("/{page_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[require(Permission.DELETE)])
-def delete_page(project: ProjectDep, page_id: str, db: DbDep) -> Response:
-    _get_or_404(db, project, page_id)
+def delete_page(project: ProjectDep, page_id: str, user: CurrentUser, db: DbDep) -> Response:
+    page = _get_or_404(db, project, page_id)
     if db.wiki_pages.list(lambda p: p.parent_id == page_id):
         raise HTTPException(status.HTTP_409_CONFLICT, "Delete or move child pages first")
+    for rev in db.wiki_revisions.list(lambda r: r.page_id == page_id):
+        db.wiki_revisions.delete(rev.id)
     db.wiki_pages.delete(page_id)
+    record_audit(
+        db,
+        project_id=project.id,
+        actor_id=user.id,
+        action="wiki.deleted",
+        target_type="wiki",
+        target_id=page.id,
+        summary=f"위키 '{page.title}' 삭제",
+    )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# ---------------------------------------------------------------- 버전 히스토리
+
+
+@router.get("/{page_id}/revisions", response_model=list[WikiRevisionSummary])
+def get_page_revisions(project: ProjectDep, page_id: str, db: DbDep) -> list[WikiRevisionSummary]:
+    _get_or_404(db, project, page_id)
+    return [WikiRevisionSummary(**r.model_dump()) for r in list_revisions(db, page_id)]
+
+
+@router.get("/{page_id}/revisions/{rev_id}", response_model=WikiRevisionDetail)
+def get_page_revision(project: ProjectDep, page_id: str, rev_id: str, db: DbDep) -> WikiRevisionDetail:
+    page = _get_or_404(db, project, page_id)
+    rev = db.wiki_revisions.get(rev_id)
+    if rev is None or rev.page_id != page.id or rev.project_id != project.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Revision not found")
+    return WikiRevisionDetail(**rev.model_dump(), diff_to_current=line_diff(rev.content, page.content))
+
+
+@router.post("/{page_id}/revisions/{rev_id}/restore", response_model=WikiPage, dependencies=[require(Permission.EDIT)])
+def restore_page_revision(project: ProjectDep, page_id: str, rev_id: str, user: CurrentUser, db: DbDep) -> WikiPage:
+    page = _get_or_404(db, project, page_id)
+    rev = db.wiki_revisions.get(rev_id)
+    if rev is None or rev.page_id != page.id or rev.project_id != project.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Revision not found")
+    restored = page.model_copy(
+        update={
+            "title": rev.title,
+            "content": rev.content,
+            "aliases": list(rev.aliases),
+            "page_type": rev.page_type,
+            "status": rev.status,
+            "tags": list(rev.tags),
+            "updated_by": user.id,
+            "updated_at": utcnow(),
+        }
+    )
+    db.wiki_pages.update(restored)
+    record_revision(db, restored, user.id, note=f"v{rev.version} 복원")
+    propagate_rename(db, project, restored, page.title)
+    record_audit(
+        db,
+        project_id=project.id,
+        actor_id=user.id,
+        action="wiki.restored",
+        target_type="wiki",
+        target_id=page.id,
+        summary=f"위키 '{restored.title}' v{rev.version} 으로 복원",
+        details={"revision_id": rev.id, "version": rev.version},
+    )
+    return restored

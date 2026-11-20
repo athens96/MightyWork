@@ -6,23 +6,32 @@
 일감 번호는 프로젝트별로 `MW-1, MW-2 …` 순서로 발급되며 삭제돼도 재사용하지 않는다.
 
 ### 멤버와 권한
-- 프로젝트를 만든 사람이 **소유자**이며 항상 관리자다. 프로젝트 삭제는 소유자만 가능.
-- 관리자는 구글 이메일로 멤버를 추가하고 권한을 준다. 아직 로그인한 적 없는 사람도 추가 가능(첫 로그인 시 자동 참여).
-- 권한: `보기`(항상 포함) · `생성`(일감·위키·덧글 작성) · `편집`(일감·위키 수정, 단계 이동) · `삭제` · `관리자`(멤버·권한 관리, 모든 권한 포함)
+- 프로젝트를 만든 사람이 **소유자**이며 항상 관리자다. 프로젝트 삭제·소유권 이전은 소유자만 가능.
+- 관리자는 구글 이메일로 멤버를 추가하고 권한을 준다. 아직 로그인한 적 없는 사람도 추가 가능(첫 로그인 시 자동 참여). SMTP 설정 시 초대 메일 자동 발송 및 재발송 지원.
+- 권한: `보기`(항상 포함) · `생성`(일감·위키·덧글·첨부 작성) · `편집`(일감·위키 수정, 단계 이동) · `삭제` · `관리자`(멤버·권한·감사 로그 관리, 모든 권한 포함)
 - 멤버가 아닌 사용자에게 프로젝트는 존재하지 않는 것처럼 보인다(404). 권한이 없는 작업은 403.
 - 작업자는 로그인한 프로젝트 멤버만 지정 가능. 멤버를 제거하면 그 사람의 일감은 '미지정'이 된다.
+- **소유권 이전**: 소유자가 로그인한 기존 멤버에게 소유권을 넘길 수 있으며 이전 소유자는 관리자 멤버로 전환.
+- **감사 로그**: 프로젝트 생성·수정·소유권 이전, 멤버 추가/변경/제거·초대 발송, 일감·위키·복원·첨부·지식 리뷰 내역을 관리자가 조회.
 
-### 문서 구조 (지식화 1단계)
-- 위키·일감 설명·덧글에서 `[[페이지 제목]]` / `[[제목|표시 텍스트]]` 는 위키 링크, `KEY-12` 는 일감 링크로 렌더링된다. 코드 블록 안은 제외.
+### 일감 · 알림
+- **파이프라인 칸반 보드**: 드래그앤드롭으로 단계 이동(편집 권한), 작업자별 필터, 상태 요약 타일.
+- **하위 일감 · 일감 간 링크 · 양방향 위키 링크**: `parent_id` 기반 하위 일감, `blocks`/`relates_to`/`duplicates` 일감 간 연결, 설명의 `[[위키]]` 링크 및 위키 역참조를 함께 표시.
+- **첨부 파일**: 프로젝트 권한으로 격리된 이미지·문서 첨부(에디터 붙여넣기/드롭 및 첨부 목록 다운로드/삭제, SVG/HTML 인라인 실행 차단).
+- **@멘션 · 알림**: 일감 설명·덧글·위키에서 `@이메일`/`@이름` 멘션(자동완성 지원), 작업자 배정, 덧글, 소유권 이전 알림을 사이드바 알림함(`/notifications`)에서 확인.
+
+### 문서 구조 · 지식화 (1~3단계)
+- 위키·일감 설명·덧글에서 `[[페이지 제목]]` / `[[제목|표시 텍스트]]` 는 위키 링크, `KEY-12` 는 일감 링크로 렌더링된다. 코드 블록 안은 제외. 에디터에서 `[[` 및 `@` 입력 시 자동완성 제공.
 - 없는 페이지 링크는 빨간 점선으로 표시되고, 생성 권한이 있으면 클릭해서 그 제목으로 만든다.
-- 위키 하단 '연결': 이 문서를 링크한 문서(백링크) · 이 문서가 링크한 문서 · 언급한 일감. 일감 패널에는 '이 일감을 언급한 위키'.
-- 페이지 제목을 바꾸면 다른 위키와 일감 설명의 `[[옛 제목]]` 이 자동으로 새 제목으로 바뀐다.
-- 프로젝트 검색(헤더 검색창, ⌘K): 일감(제목·레이블·설명·할 일·덧글)과 위키(제목·본문). `MW-12` 처럼 키로 찾으면 해당 일감이 맨 위.
-- 링크는 같은 프로젝트 안에서만 연결된다(권한 격리). 판정 규칙은 `server/app/services/links.py` 와 `client/src/lib/wikilinks.ts` 가 같다.
-- **별칭**: 페이지마다 다른 이름(예: SSO)을 붙이면 `[[SSO]]` 링크·백링크·검색에 함께 쓰인다.
-- **링크 안 된 언급**: 다른 위키·일감 설명에서 제목/별칭이 링크 없이 적힌 곳을 찾아 보여주고, 편집 권한이 있으면 한 번에 `[[링크]]` 로 바꾼다 (옵시디언 Unlinked mentions).
-- **Properties**: 위키 페이지에 타입(가이드·명세·결정·회의록·참고·메모)·상태(초안·검토 중·확정·폐기)·담당자·태그. 위키 첫 화면의 문서 목록에서 이 값들로 거른다 (옵시디언 Bases).
-- **로컬 그래프**: 문서를 중심으로 1~2단계 이웃(위키·일감)과 링크·일감 언급·상하위 관계를 그린다. 노드를 누르면 이동.
+- 위키 하단 '연결': 이 문서를 링크한 문서(백링크) · 이 문서가 링크한 문서 · 언급한 일감. 일감 패널에는 '연결된 위키'(양방향).
+- 페이지 제목을 바꾸면 다른 위키와 일감 설명의 `[[옛 제목]]` 이 자동으로 새 제목으로 바뀐다(코드 블록 제외).
+- **버전 히스토리**: 위키 생성·수정마다 버전 스냅샷이 쌓이며, 현재 문서 대비 줄 단위 Diff 확인 및 원클릭 복원 지원.
+- 프로젝트 검색(헤더 검색창, ⌘K): SQLite FTS5(trigram) 기반 일감·위키 검색. `MW-12` 처럼 키로 찾으면 해당 일감이 맨 위.
+- **별칭 · 링크 안 된 언급 · Properties**: 별칭 링크·검색, 미연결 언급 원클릭 링크화, 타입·상태·담당자·태그 필터(Bases).
+- **로컬 그래프 · 전체 그래프 뷰**: 문서 중심 1~2단계 로컬 그래프 + 지식 베이스의 프로젝트 전체 그래프(위키·일감·용어집·승인된 엔티티/관계, 줌·필터·검색 강조).
+- **프로젝트 용어집**: 도메인 용어 정의, 동의어, 상하위 개념(계층), 위키 연결 및 프로젝트 내 사용처 조회.
+- **고정 스키마 엔티티/관계 추출 · 리뷰 큐**: 위키·일감·용어집에서 `system/service/api/data/role/decision/concept` 엔티티와 관계를 자동 추출해 리뷰 큐(`pending`)에 적재 → 승인(`approved`)/거절(`rejected`).
+- **그래프 기반 Q&A**: 질문 키워드를 용어집 동의어·상하위로 확장하고 지식·문서 그래프를 순회해 근거 출처·서브그래프와 함께 답변.
 
 ### 내보내기 · 가져오기
 - 위키 페이지 '내보내기' 메뉴: **PDF**(인쇄 창에서 PDF로 저장) · **Word(.docx)** · **한글(.hwpx / .hwp)** · HTML · Markdown. '하위 페이지 포함'으로 트리를 한 문서로.
@@ -34,7 +43,7 @@
 
 ### MCP 서버 (AI 앱 연결)
 - 주소: `<PUBLIC_URL>/mcp` (Streamable HTTP, **MCP 2026-07-28** — `server/discover`·무상태, 이전 버전 클라이언트도 SDK 가 처리)
-- 도구: `list_projects` · `search` · `list_tasks` · `get_task` · `create_task` · `update_task` · `add_comment` · `list_wiki_pages` · `get_wiki_page` · `create_wiki_page` · `update_wiki_page`
+- 도구: `list_projects` · `search` · `list_tasks` · `get_task` · `create_task`(하위 일감 `parent` 지원) · `update_task` · `link_tasks` · `add_comment` · `list_wiki_pages` · `get_wiki_page` · `create_wiki_page` · `update_wiki_page` · `list_glossary` · `ask_knowledge_graph`
 - 권한: 토큰 scope(`mightywork:read` / `mightywork:write`) **와** 사용자의 실제 프로젝트 권한(보기·생성·편집)을 함께 확인
 - 인증: **OAuth 2.1** — 이 서버가 인가 서버를 겸함, 로그인은 기존 구글 로그인 + 동의 화면
   - Protected Resource Metadata(RFC 9728), 401 `WWW-Authenticate: resource_metadata`
@@ -52,10 +61,11 @@ claude mcp add --transport http mightywork http://localhost:8000/mcp   # 브라�
 
 | 구성 | 기술 |
 | --- | --- |
-| client | React 19 + TypeScript + Vite, React Router, `@react-oauth/google` |
-| server | Python 3.12 + FastAPI, Pydantic v2, PyJWT, google-auth |
-| 인증 | Google 계정 로그인 → 서버가 ID 토큰 검증 후 자체 JWT 발급 |
-| DB | 파일 DB(JSON) — `Repository` 인터페이스 뒤에 숨겨져 있어 추후 교체 가능 |
+| client | React 19 + TypeScript + Vite 8, React Router 7, `@react-oauth/google`, Vitest |
+| server | Python 3.12 + FastAPI, Pydantic v2, PyJWT, google-auth, MCP Python SDK |
+| 인증 | Google 계정 로그인 → 자체 JWT + `HttpOnly` 리프레시 쿠키 자동 갱신 |
+| DB | SQLite(WAL + FTS5 trigram 기본, 기존 JSON 자동 이전) / 파일 JSON 선택 가능 — `Repository` 인터페이스 뒤에 숨겨져 교체 용이 |
+| 배포 | `Dockerfile` (server/client), `docker-compose.yml`, GitHub Actions CI |
 
 ## 디렉터리 구조
 
@@ -157,17 +167,14 @@ npm install
 npm run dev                 # http://localhost:5174 (/api 는 8000 으로 프록시)
 ```
 
+### 4. Docker Compose 실행
+```bash
+GOOGLE_CLIENT_ID=... JWT_SECRET=$(python3 -c "import secrets; print(secrets.token_urlsafe(48))") docker compose up --build
+```
+
 ## DB 교체 방법
-1. `server/app/db/base.py` 의 `Repository` 를 구현하는 클래스 작성(예: `SqlRepository`)
-2. `server/app/db/__init__.py` 의 `Database` 에 팩토리 추가(예: `from_sql(url)`)
-3. `server/app/main.py` 의 `create_app` 에서 사용할 팩토리 선택
+1. `server/app/db/base.py` 의 `Repository` 를 구현하는 클래스 작성(예: `PostgresRepository`)
+2. `server/app/db/__init__.py` 의 `Database` 에 팩토리 추가
+3. `server/app/main.py` 의 `create_app` 에서 `settings.db_backend` 분기 추가
 
-라우터는 `Repository` 인터페이스에만 의존하므로 수정할 필요가 없다.
-
-> 파일 DB는 단일 프로세스 전제다. uvicorn worker 를 여러 개 띄우면 데이터가 꼬일 수 있다.
-
-## 다음 단계 후보
-- 일감: 드래그앤드롭, 하위 일감/일감 간 링크, 일감↔위키 링크, 첨부 파일, @멘션·알림
-- 위키: `[[` 입력 시 자동완성, 버전 히스토리, 전체 그래프 뷰
-- 지식화: 프로젝트 용어집(동의어·상하위) → 고정 스키마 엔티티/관계 추출(리뷰 큐) → 그래프 기반 Q&A
-- 권한: 초대 메일 발송, 소유권 이전, 감사 로그
+기본 백엔드는 `sqlite`(WAL 모드 + FTS5 + 영속 OAuth 스토어로 멀티 워커 안전)이며, 기존 `data/*.json` 이 있으면 최초 기동 시 자동으로 이전합니다. `DB_BACKEND=json` 으로 기존 JSON 파일 DB도 선택할 수 있습니다.

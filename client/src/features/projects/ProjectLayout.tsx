@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { NavLink, Outlet, useNavigate, useOutletContext, useParams, useSearchParams } from "react-router-dom";
 import { projectsApi } from "../../api";
-import { BoardIcon, DocIcon, SearchIcon, TrashIcon, UsersIcon } from "../../components/icons";
+import { BoardIcon, DocIcon, GraphIcon, SearchIcon, TrashIcon, UsersIcon } from "../../components/icons";
 import { roleLabel } from "../../lib/permissions";
 import type { Project } from "../../types";
 import { useProjects } from "./ProjectsContext";
@@ -67,6 +67,9 @@ export function ProjectLayout() {
           </NavLink>
           <NavLink to="wiki">
             <DocIcon size={12} /> 위키
+          </NavLink>
+          <NavLink to="knowledge">
+            <GraphIcon size={12} /> 지식
           </NavLink>
           <NavLink to="members">
             <UsersIcon size={12} /> 멤버

@@ -1,9 +1,10 @@
 from fastapi import APIRouter, HTTPException, Response, status
 
-from app.api.deps import AccessDep, CurrentUser, DbDep, TaskDep, apply_patch, require
+from app.api.deps import AccessDep, CurrentUser, DbDep, ProjectDep, TaskDep, apply_patch, require
 from app.models.activity import TaskActivity
 from app.models.comment import Comment, CommentCreate, CommentUpdate
 from app.models.member import Permission
+from app.services.notifications import notify_mentions, notify_user
 
 router = APIRouter(prefix="/projects/{project_id}/tasks/{task_id}", tags=["comments"])
 
@@ -14,10 +15,34 @@ def list_comments(task: TaskDep, db: DbDep) -> list[Comment]:
 
 
 @router.post("/comments", response_model=Comment, status_code=status.HTTP_201_CREATED, dependencies=[require(Permission.CREATE)])
-def create_comment(task: TaskDep, body: CommentCreate, user: CurrentUser, db: DbDep) -> Comment:
-    return db.comments.create(
+def create_comment(project: ProjectDep, task: TaskDep, body: CommentCreate, user: CurrentUser, db: DbDep) -> Comment:
+    comment = db.comments.create(
         Comment(project_id=task.project_id, task_id=task.id, author_id=user.id, body=body.body)
     )
+    link = f"/projects/{project.id}/tasks/{task.id}"
+    key = f"{project.key}-{task.number}"
+    mentioned = notify_mentions(
+        db,
+        project=project,
+        actor=user,
+        text=comment.body,
+        title=f"{key} '{task.title}' 덧글에서 나를 언급했습니다",
+        link=link,
+    )
+    already = {n.user_id for n in mentioned}
+    for uid in {task.assignee_id, task.created_by}:
+        if uid and uid not in already:
+            notify_user(
+                db,
+                user_id=uid,
+                project_id=project.id,
+                actor_id=user.id,
+                kind="comment",
+                title=f"{key} '{task.title}' 에 새 덧글이 달렸습니다",
+                body=" ".join(comment.body.split())[:140],
+                link=link,
+            )
+    return comment
 
 
 def _own_comment(db: DbDep, task_id: str, comment_id: str, user_id: str, admin_ok: bool = False) -> Comment:

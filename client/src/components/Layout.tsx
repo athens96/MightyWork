@@ -1,17 +1,24 @@
-import { useState } from "react";
-import { Link, NavLink, Outlet, useMatch } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link, NavLink, Outlet, useLocation, useMatch } from "react-router-dom";
+import { notificationsApi } from "../api";
 import { useAuth } from "../auth/AuthContext";
 import { useProjects } from "../features/projects/ProjectsContext";
 import { useTheme } from "../theme";
-import { BoardIcon, DocIcon, FolderIcon, GridIcon, LogoutIcon, MoonIcon, PlugIcon, PlusIcon, SearchIcon, SunIcon } from "./icons";
+import { BellIcon, BoardIcon, DocIcon, FolderIcon, GraphIcon, GridIcon, LogoutIcon, MoonIcon, PlugIcon, PlusIcon, SearchIcon, SunIcon } from "./icons";
 
-/** MightyCode 사이드바: 검색 → 홈 행 → 섹션 머리 → 프로젝트 행(+하위 일감/위키) → 하단 바 */
+/** MightyCode 사이드바: 검색 → 홈 행 → 섹션 머리 → 프로젝트 행(+하위 일감/위키/지식) → 하단 바 */
 export function Layout() {
   const { user, logout } = useAuth();
   const { projects } = useProjects();
   const [theme, toggleTheme] = useTheme();
   const [query, setQuery] = useState("");
+  const [unread, setUnread] = useState(0);
+  const location = useLocation();
   const activeProjectId = useMatch("/projects/:projectId/*")?.params.projectId;
+
+  useEffect(() => {
+    notificationsApi.list(true).then((r) => setUnread(r.unread_count), () => {});
+  }, [location.pathname]);
 
   const q = query.trim().toLowerCase();
   const visible = q ? projects.filter((p) => `${p.key} ${p.name}`.toLowerCase().includes(q)) : projects;
@@ -56,6 +63,9 @@ export function Layout() {
                   <NavLink to={`/projects/${p.id}/wiki`} className="side-sub">
                     <DocIcon size={13} /> 위키
                   </NavLink>
+                  <NavLink to={`/projects/${p.id}/knowledge`} className="side-sub">
+                    <GraphIcon size={13} /> 지식 베이스
+                  </NavLink>
                 </>
               )}
             </div>
@@ -74,6 +84,10 @@ export function Layout() {
           <span className="who" title={user?.email}>
             {user?.name || user?.email}
           </span>
+          <NavLink to="/notifications" className="icon-btn notif-btn" title={`알림${unread ? ` (${unread})` : ""}`}>
+            <BellIcon />
+            {unread > 0 && <span className="notif-badge">{unread > 9 ? "9+" : unread}</span>}
+          </NavLink>
           <NavLink to="/settings/apps" className="icon-btn" title="연결된 앱 (MCP)">
             <PlugIcon />
           </NavLink>

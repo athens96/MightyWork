@@ -25,15 +25,17 @@ from app.models.common import utcnow
 from app.models.member import Permission
 from app.models.oauth import SCOPE_READ, SCOPE_WRITE
 from app.models.project import Project
-from app.models.task import PIPELINE_LABELS, PipelineStage, Priority, Task
+from app.models.task import PIPELINE_LABELS, PipelineStage, Priority, Task, TaskLink, TaskLinkKind
 from app.models.user import User
 from app.models.wiki import PageStatus, PageType, WikiPage
 from app.services.access import Access, accessible_projects, is_member_user, resolve_access
+from app.services.knowledge_qa import answer_question
 from app.services.links import norm_title, pages_by_title, project_pages, propagate_rename
 from app.services.oauth import server as oauth
 from app.services.projects import allocate_task_number
 from app.services.search import search as search_project
 from app.services.tasks import record_changes, record_created
+from app.services.wiki_revisions import record_revision
 
 READ = ToolAnnotations(read_only_hint=True, open_world_hint=False)
 CREATE = ToolAnnotations(read_only_hint=False, destructive_hint=False, open_world_hint=False)
@@ -235,6 +237,32 @@ def build_mcp(settings: Settings, db: Database) -> MCPServer:
         pg = find_page(a.project, page)
         return page_summary(pg) | {"content": pg.content, "url": f"{settings.app_url.rstrip('/')}/projects/{a.project.id}/wiki/{pg.id}"}
 
+    @mcp.tool(annotations=READ)
+    def list_glossary(project: str, query: str | None = None) -> list[dict[str, Any]]:
+        """프로젝트 용어집(표제어·정의·동의어·상위 용어) 조회."""
+        a = project_access(me(), project)
+        terms = db.glossary_terms.list(lambda g: g.project_id == a.project.id)
+        by_id = {g.id: g.term for g in terms}
+        if query and query.strip():
+            q = query.strip().casefold()
+            terms = [g for g in terms if q in g.term.casefold() or q in g.definition.casefold() or any(q in s.casefold() for s in g.synonyms)]
+        return [
+            {"id": g.id, "term": g.term, "definition": g.definition, "synonyms": g.synonyms, "broader": by_id.get(g.broader_id) if g.broader_id else None}
+            for g in sorted(terms, key=lambda g: g.term.casefold())
+        ]
+
+    @mcp.tool(annotations=READ)
+    def ask_knowledge_graph(project: str, question: str) -> dict[str, Any]:
+        """프로젝트 용어집·지식 그래프·위키·일감을 기반으로 질문에 답하고 근거를 반환."""
+        a = project_access(me(), project)
+        res = answer_question(db, a.project, question)
+        return {
+            "answer": res.answer,
+            "expanded_terms": res.expanded_terms,
+            "related_facts": res.related_facts,
+            "citations": [c.model_dump() for c in res.citations],
+        }
+
     # ------------------------------------------------------------ 쓰기 도구
 
     @mcp.tool(annotations=CREATE)
@@ -244,16 +272,18 @@ def build_mcp(settings: Settings, db: Database) -> MCPServer:
         description: str = "",
         stage: PipelineStage = PipelineStage.BACKLOG,
         priority: Priority = Priority.MEDIUM,
+        parent: str | None = None,
         assignee_email: str | None = None,
         start_date: date | None = None,
         due_date: date | None = None,
         tags: list[str] | None = None,
         checklist: list[str] | None = None,
     ) -> dict[str, Any]:
-        """일감 만들기. 설명은 Markdown, checklist 는 할 일 항목 문자열 목록."""
+        """일감 만들기. 설명은 Markdown, parent 는 상위 일감 키('MW-1'), checklist 는 할 일 항목 문자열 목록."""
         user = me(write=True)
         a = project_access(user, project, Permission.CREATE)
-        data = dict(title=title, description=description, stage=stage, priority=priority, assignee_id=user_by_email(a.project, assignee_email),
+        parent_id = find_task(a.project, parent).id if parent else None
+        data = dict(title=title, description=description, stage=stage, priority=priority, parent_id=parent_id, assignee_id=user_by_email(a.project, assignee_email),
                     start_date=start_date, due_date=due_date, tags=tags or [], checklist=[{"text": c} for c in checklist or []])
         try:
             Task.model_validate(data | {"project_id": a.project.id, "number": 0, "created_by": user.id})
@@ -263,6 +293,21 @@ def build_mcp(settings: Settings, db: Database) -> MCPServer:
         t = db.tasks.create(Task.model_validate(data | {"project_id": a.project.id, "number": number, "created_by": user.id}))
         record_created(db, t, user.id)
         return task_detail(a.project, t)
+
+    @mcp.tool(annotations=CREATE)
+    def link_tasks(project: str, source_task: str, target_task: str, kind: TaskLinkKind = TaskLinkKind.RELATES_TO) -> dict[str, Any]:
+        """두 일감 사이에 관계(blocks / relates_to / duplicates)를 연결."""
+        user = me(write=True)
+        a = project_access(user, project, Permission.EDIT)
+        src = find_task(a.project, source_task)
+        dst = find_task(a.project, target_task)
+        if src.id == dst.id:
+            raise ToolError("자기 자신과 연결할 수 없습니다")
+        existing = db.task_links.list(lambda l: l.project_id == a.project.id and l.source_id == src.id and l.target_id == dst.id and l.kind == kind)
+        if existing:
+            return {"id": existing[0].id, "source": f"{a.project.key}-{src.number}", "target": f"{a.project.key}-{dst.number}", "kind": kind.value}
+        created = db.task_links.create(TaskLink(project_id=a.project.id, source_id=src.id, target_id=dst.id, kind=kind, created_by=user.id))
+        return {"id": created.id, "source": f"{a.project.key}-{src.number}", "target": f"{a.project.key}-{dst.number}", "kind": kind.value}
 
     @mcp.tool(annotations=UPDATE)
     def update_task(
@@ -327,6 +372,7 @@ def build_mcp(settings: Settings, db: Database) -> MCPServer:
         except ValidationError as e:
             raise ToolError(f"값이 올바르지 않습니다: {e.errors(include_url=False)[0]['msg']}") from e
         db.wiki_pages.create(pg)
+        record_revision(db, pg, user.id, note="MCP 작성")
         return page_summary(pg) | {"content": pg.content}
 
     @mcp.tool(annotations=UPDATE)
@@ -353,6 +399,7 @@ def build_mcp(settings: Settings, db: Database) -> MCPServer:
         except ValidationError as e:
             raise ToolError(f"값이 올바르지 않습니다: {e.errors(include_url=False)[0]['msg']}") from e
         db.wiki_pages.update(after)
+        record_revision(db, after, user.id, note="MCP 수정")
         propagate_rename(db, a.project, after, before.title)
         return page_summary(after) | {"content": after.content}
 

@@ -40,6 +40,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(() => {
+    authApi.logout().catch(() => {});
     tokenStorage.clear();
     googleLogout();
     setUser(null);

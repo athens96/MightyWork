@@ -1,4 +1,5 @@
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
+from fastapi.concurrency import run_in_threadpool
 
 from app.api.deps import CurrentUser, DbDep, ProjectDep, SettingsDep, require
 from app.api.routes.wiki import _validate_parent
@@ -25,7 +26,8 @@ async def import_page(
         raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, f"파일이 너무 큽니다 (최대 {MAX_BYTES // 1024 // 1024}MB)")
     _validate_parent(db, project, None, parent_id or None)
     try:
-        imported = to_page(settings, file.filename or "", data)
+        # kordoc 하위 프로세스 실행이 이벤트 루프를 막지 않도록 스레드풀에서 변환
+        imported = await run_in_threadpool(to_page, settings, file.filename or "", data)
     except UnsupportedFile as e:
         raise HTTPException(status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, str(e))
     except ConverterUnavailable as e:

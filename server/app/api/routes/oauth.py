@@ -6,6 +6,7 @@ from html import escape
 from urllib.parse import unquote, urlsplit
 
 from fastapi import APIRouter, HTTPException, Request, Response, status
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel
 
@@ -48,8 +49,11 @@ def as_metadata(settings: SettingsDep) -> JSONResponse:
 
 
 @public.post("/oauth/register", status_code=status.HTTP_201_CREATED)
-async def register(request: Request, db: DbDep) -> JSONResponse:
+async def register(request: Request, settings: SettingsDep, db: DbDep) -> JSONResponse:
     """RFC 7591 동적 등록 — 2026-07-28 에서 deprecated (CIMD 우선), 호환을 위해 유지."""
+    client_ip = request.client.host if request.client else "unknown"
+    if not _store(request).check_dcr_rate_limit(client_ip, settings.oauth_dcr_rate_limit_per_min):
+        return _error(OAuthError("too_many_requests", "잠시 후 다시 시도하세요", 429))
     try:
         body = await request.json()
         if not isinstance(body, dict):
@@ -57,7 +61,7 @@ async def register(request: Request, db: DbDep) -> JSONResponse:
     except ValueError:
         return _error(OAuthError("invalid_client_metadata", "JSON 본문이 필요합니다"))
     try:
-        return JSONResponse(oauth.register_client(db, body), status_code=201, headers=NO_STORE)
+        return JSONResponse(oauth.register_client(db, body, max_clients=settings.oauth_dcr_max_clients), status_code=201, headers=NO_STORE)
     except OAuthError as e:
         return _error(e)
 
@@ -116,7 +120,8 @@ async def token(request: Request, settings: SettingsDep, db: DbDep) -> JSONRespo
     form = {k: str(v) for k, v in (await request.form()).items()}
     try:
         client_id, secret = _client_auth(request, form)
-        client = oauth.get_client(settings, db, client_id)
+        # CIMD 메타데이터 원격 조회가 이벤트 루프를 막지 않도록 스레드풀에서 실행
+        client = await run_in_threadpool(oauth.get_client, settings, db, client_id)
         oauth.authenticate_client(client, secret)
         grant_type = form.get("grant_type")
         if grant_type == "authorization_code":
@@ -135,7 +140,7 @@ async def revoke(request: Request, settings: SettingsDep, db: DbDep) -> Response
     form = {k: str(v) for k, v in (await request.form()).items()}
     try:
         client_id, secret = _client_auth(request, form)
-        client = oauth.get_client(settings, db, client_id)
+        client = await run_in_threadpool(oauth.get_client, settings, db, client_id)
         oauth.authenticate_client(client, secret)
     except OAuthError as e:
         return _error(e)
@@ -182,8 +187,10 @@ def decide(request_id: str, body: Decision, request: Request, user: CurrentUser,
         raise HTTPException(status.HTTP_404_NOT_FOUND, "연결 요청이 없거나 만료되었습니다. 앱에서 다시 시도하세요.")
     if not body.approve:
         return {"redirect_to": oauth.redirect_with(settings, p.redirect_uri, {"error": "access_denied", "error_description": "사용자가 거부했습니다", "state": p.state})}
-    scopes = [s for s in SCOPES if s in body.scopes] or p.scopes
-    if oauth.SCOPE_READ not in scopes:
+    # 클라이언트가 요청한 범위 안에서만 허용 (요청하지 않은 권한 승격 방지)
+    requested_set = set(p.scopes)
+    scopes = [s for s in SCOPES if s in body.scopes and s in requested_set] or list(p.scopes)
+    if oauth.SCOPE_READ in requested_set and oauth.SCOPE_READ not in scopes:
         scopes = [oauth.SCOPE_READ, *scopes]  # 읽기는 항상 포함 (MCP 서버 필수 범위)
     return {"redirect_to": oauth.approve(settings, db, _store(request), p, user.id, scopes)}
 

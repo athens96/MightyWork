@@ -5,6 +5,7 @@ import { Layout } from "./components/Layout";
 import { LoginPage } from "./pages/LoginPage";
 import { ConsentPage } from "./features/oauth/ConsentPage";
 import { ConnectedAppsPage } from "./features/oauth/ConnectedAppsPage";
+import { NotificationsPage } from "./features/notifications/NotificationsPage";
 import { ProjectsProvider } from "./features/projects/ProjectsContext";
 import { ProjectListPage } from "./features/projects/ProjectListPage";
 import { ProjectLayout } from "./features/projects/ProjectLayout";
@@ -12,11 +13,17 @@ import { MembersPage } from "./features/projects/MembersPage";
 import { SearchPage } from "./features/projects/SearchPage";
 import { TaskBoardPage, TaskDetailRoute } from "./features/tasks/TaskBoardPage";
 
-// 위키(마크다운 렌더러 + 코드 하이라이트)는 용량이 커서 진입 시에만 로드
+// 위키·지식 베이스(마크다운 렌더러 + 그래프)는 진입 시에만 로드
 const WikiPage = lazy(() => import("./features/wiki/WikiPage").then((m) => ({ default: m.WikiPage })));
+const KnowledgePage = lazy(() => import("./features/knowledge/KnowledgePage").then((m) => ({ default: m.KnowledgePage })));
 const wikiElement = (
   <Suspense fallback={<p className="muted">불러오는 중…</p>}>
     <WikiPage />
+  </Suspense>
+);
+const knowledgeElement = (
+  <Suspense fallback={<p className="muted">불러오는 중…</p>}>
+    <KnowledgePage />
   </Suspense>
 );
 
@@ -36,6 +43,7 @@ export default function App() {
         >
           <Route index element={<Navigate to="/projects" replace />} />
           <Route path="/projects" element={<ProjectListPage />} />
+          <Route path="/notifications" element={<NotificationsPage />} />
           <Route path="/settings/apps" element={<ConnectedAppsPage />} />
           <Route path="/projects/:projectId" element={<ProjectLayout />}>
             <Route index element={<Navigate to="tasks" replace />} />
@@ -43,6 +51,7 @@ export default function App() {
               <Route path=":taskId" element={<TaskDetailRoute />} />
             </Route>
             <Route path="wiki" element={wikiElement} />
+            <Route path="knowledge" element={knowledgeElement} />
             <Route path="members" element={<MembersPage />} />
             <Route path="search" element={<SearchPage />} />
             <Route path="wiki/:pageId" element={wikiElement} />

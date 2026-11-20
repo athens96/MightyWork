@@ -40,6 +40,7 @@ def _clean_email(v: object) -> object:
 class MemberCreate(BaseModel):
     email: str = Field(pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$", max_length=254)
     permissions: list[Permission] = [Permission.VIEW, Permission.CREATE, Permission.EDIT]
+    send_invite: bool = True
 
     _email = field_validator("email", mode="before")(_clean_email)
 
@@ -55,3 +56,8 @@ class MemberRead(BaseModel):
     permissions: list[Permission]
     is_owner: bool = False
     pending: bool = False  # 초대됐지만 아직 로그인 안 함
+    invite_status: str | None = None  # sent | skipped_unconfigured | failed (초대 직후/재발송 응답)
+
+
+class OwnershipTransferRequest(BaseModel):
+    new_owner_user_id: str

@@ -44,3 +44,33 @@ def is_member_user(db: Database, project: Project, user_id: str) -> bool:
         return True
     user = db.users.get(user_id)
     return user is not None and find_member(db, project.id, user.email) is not None
+
+
+def project_related_users(db: Database, project: Project) -> list[User]:
+    """프로젝트 멤버(소유자 포함)와 이 프로젝트의 일감·덧글·이력·위키에 등장하는 사용자만 반환."""
+    member_emails = {m.email.lower() for m in db.project_members.list(lambda m: m.project_id == project.id)}
+    ids: set[str] = {project.created_by}
+    for t in db.tasks.list(lambda t: t.project_id == project.id):
+        ids.add(t.created_by)
+        if t.assignee_id:
+            ids.add(t.assignee_id)
+    for c in db.comments.list(lambda c: c.project_id == project.id):
+        ids.add(c.author_id)
+    for a in db.task_activities.list(lambda a: a.project_id == project.id):
+        ids.add(a.actor_id)
+    for p in db.wiki_pages.list(lambda p: p.project_id == project.id):
+        ids.add(p.created_by)
+        ids.add(p.updated_by)
+        if p.owner_id:
+            ids.add(p.owner_id)
+    users = db.users.list(lambda u: u.id in ids or u.email.lower() in member_emails)
+    return sorted(users, key=lambda u: u.name or u.email)
+
+
+def visible_users_for(db: Database, user: User) -> list[User]:
+    """현재 사용자와 같은 프로젝트에 속하거나 연관된 사용자만 노출 (전역 디렉터리 유출 방지)."""
+    by_id: dict[str, User] = {user.id: user}
+    for access in accessible_projects(db, user):
+        for related in project_related_users(db, access.project):
+            by_id[related.id] = related
+    return sorted(by_id.values(), key=lambda u: u.name or u.email)
