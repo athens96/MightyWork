@@ -1,4 +1,6 @@
-import { http } from "./http";
+import { http, requestFile, upload } from "./http";
+
+export type ExportFormat = "md" | "html" | "docx" | "hwpx" | "hwp";
 import type {
   Comment,
   Member,
@@ -94,6 +96,20 @@ export const wikiApi = {
     http.patch<WikiPage>(`/projects/${projectId}/wiki/pages/${id}`, body),
   remove: (projectId: string, id: string) => http.delete(`/projects/${projectId}/wiki/pages/${id}`),
   links: (projectId: string, id: string) => http.get<PageLinks>(`/projects/${projectId}/wiki/pages/${id}/links`),
+  export: (projectId: string, id: string, opts: { format: ExportFormat; children?: boolean; preset?: string; print?: boolean }) => {
+    const qs = new URLSearchParams({ format: opts.format });
+    if (opts.children) qs.set("children", "true");
+    if (opts.preset) qs.set("preset", opts.preset);
+    if (opts.print) qs.set("print", "true");
+    return requestFile(`/projects/${projectId}/wiki/pages/${id}/export?${qs}`);
+  },
+  exportZip: (projectId: string) => requestFile(`/projects/${projectId}/wiki/export.zip`),
+  import: (projectId: string, file: File, parentId?: string | null) => {
+    const form = new FormData();
+    form.append("file", file);
+    if (parentId) form.append("parent_id", parentId);
+    return upload<WikiPage>(`/projects/${projectId}/wiki/import`, form);
+  },
   graph: (projectId: string, id: string, depth: 1 | 2) =>
     http.get<LocalGraph>(`/projects/${projectId}/wiki/pages/${id}/graph?depth=${depth}`),
   unlinkedMentions: (projectId: string, id: string) =>

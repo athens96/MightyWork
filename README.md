@@ -24,6 +24,14 @@
 - **Properties**: 위키 페이지에 타입(가이드·명세·결정·회의록·참고·메모)·상태(초안·검토 중·확정·폐기)·담당자·태그. 위키 첫 화면의 문서 목록에서 이 값들로 거른다 (옵시디언 Bases).
 - **로컬 그래프**: 문서를 중심으로 1~2단계 이웃(위키·일감)과 링크·일감 언급·상하위 관계를 그린다. 노드를 누르면 이동.
 
+### 내보내기 · 가져오기
+- 위키 페이지 '내보내기' 메뉴: **PDF**(인쇄 창에서 PDF로 저장) · **Word(.docx)** · **한글(.hwpx / .hwp)** · HTML · Markdown. '하위 페이지 포함'으로 트리를 한 문서로.
+  - Markdown 은 `[[링크]]`·front matter(별칭·태그·타입·상태) 그대로 → 옵시디언에서 열림
+  - Word: pandoc(`pypandoc-binary`), `--sandbox` 로 서버 파일 접근 차단, 한국어 글꼴·표 테두리 서식
+  - 한글: [kordoc](https://github.com/chrisryugj/kordoc)(MIT) 공문서 프리셋(보고서·회의록·계획서·개조식·기안문 …), .hwp 는 [rhwp](https://github.com/edwardkim/rhwp)(MIT) 엔진
+- 위키 목록의 '전체 ZIP': 페이지 트리를 폴더로 한 .md 묶음(옵시디언 볼트) + wiki.html
+- 위키 '가져오기': HWP·HWPX·DOCX·PDF·PPTX·XLSX·Markdown → 새 페이지 (생성 권한, 최대 20MB, 그림은 아직 제외). MightyWork 가 내보낸 .md 는 속성까지 복원
+
 일감 필드 (JIRA/Linear 스타일): 제목, 설명(Markdown), 상태(파이프라인 단계), 우선순위, 작업자, 보고자,
 시작일·종료일(시작일 ≤ 종료일), 추정치(pt), 레이블, 할 일 체크리스트, 덧글(Markdown), 변경 이력.
 
@@ -53,6 +61,9 @@ server/
     services/links.py    # [[링크]]·일감 키 파싱, 백링크, 제목 변경 전파
     services/search.py   # 프로젝트 검색 (SQLite 전환 시 FTS5 로 교체)
     services/graph.py    # 로컬 그래프 (위키·일감 간선, BFS)
+    services/export/     # 내보내기: prepare(묶기·링크) · markdown · html · docx(pandoc) · hangul(kordoc) · archive(zip)
+    services/importer.py # 문서 가져오기 (kordoc → Markdown)
+  tools/kordoc/          # kordoc·rhwp 버전 고정 (package.json / lock)
     api/deps.py          # 의존성: 현재 사용자, 현재 프로젝트, DB, PATCH 헬퍼
     api/routes/          # auth, users, projects, members, tasks, comments, wiki, knowledge
   tests/                 # pytest (구글 검증기는 가짜로 대체)
@@ -91,6 +102,9 @@ client/
 | GET | `/projects/{pid}/wiki/pages/{id}/unlinked-mentions` | 링크 안 된 언급 목록 |
 | POST | `/projects/{pid}/wiki/pages/{id}/unlinked-mentions/link` | 선택한 문서의 언급을 `[[링크]]` 로 변환 (편집) |
 | GET | `/projects/{pid}/wiki/pages/{id}/graph?depth=1\|2` | 로컬 그래프 (노드·간선) |
+| GET | `/projects/{pid}/wiki/pages/{id}/export?format=md\|html\|docx\|hwpx\|hwp` | 내보내기 (`children`, `print`, `preset`) |
+| GET | `/projects/{pid}/wiki/export.zip` | 위키 전체 ZIP |
+| POST | `/projects/{pid}/wiki/import` | 문서 가져오기 (multipart `file`, `parent_id`) |
 | GET | `/projects/{pid}/search?q=` | 일감 + 위키 검색 (점수순) |
 | GET/POST | `/projects/{pid}/wiki/pages` | 페이지 목록(본문 제외, `?page_type=&status=&tag=&owner_id=` 필터) / 생성 |
 | GET/PATCH/DELETE | `/projects/{pid}/wiki/pages/{id}` | 조회 / 수정·이동 / 삭제(하위 페이지 있으면 409) |
@@ -110,6 +124,7 @@ Google Cloud Console → API 및 서비스 → 사용자 인증 정보 → **OAu
 cd server
 cp .env.example .env        # GOOGLE_CLIENT_ID, JWT_SECRET 설정
 uv sync
+(cd tools/kordoc && npm ci)  # 한글 내보내기·문서 가져오기용 (Node.js 20+). 없으면 해당 기능만 503
 uv run uvicorn app.main:app --reload --port 8000
 uv run pytest               # 테스트
 ```

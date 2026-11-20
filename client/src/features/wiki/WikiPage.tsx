@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { membersApi, wikiApi } from "../../api";
 import { ApiError } from "../../api/http";
 import type { LocalGraph, PageLinks, UnlinkedMention, User, WikiPage as WikiPageType, WikiPageSummary } from "../../types";
 import { LocalGraphView } from "./LocalGraphView";
+import { ExportMenu } from "./ExportMenu";
 import { PropertiesBar, PropertiesEditor } from "./pageProps";
 import { WikiIndex } from "./WikiIndex";
 import { useCurrentProject } from "../projects/ProjectLayout";
@@ -33,6 +34,24 @@ export function WikiPage() {
   const [mentions, setMentions] = useState<UnlinkedMention[]>([]);
   const [graph, setGraph] = useState<LocalGraph | null>(null);
   const [graphDepth, setGraphDepth] = useState<1 | 2>(1);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const [importing, setImporting] = useState(false);
+
+  // HWP·HWPX·DOCX·PDF·Markdown 파일 → 새 위키 페이지
+  const importFile = async (file: File | undefined) => {
+    if (!file) return;
+    setImporting(true);
+    try {
+      const created = await wikiApi.import(project.id, file);
+      await reloadTree();
+      navigate(`${basePath}/${created.id}`);
+    } catch (e) {
+      alert(e instanceof ApiError ? `가져오기 실패: ${String(e.detail)}` : "가져오기에 실패했습니다.");
+    } finally {
+      setImporting(false);
+      if (fileInput.current) fileInput.current.value = "";
+    }
+  };
   const [links, setLinks] = useState<PageLinks | null>(null);
 
   const reloadTree = useCallback(() => wikiApi.list(project.id).then(setPages), [project.id]);
@@ -157,9 +176,21 @@ export function WikiPage() {
             목록
           </Link>
           {canCreate && (
-            <button className="icon-btn" onClick={() => createPage(null)} title="새 페이지">
-              <PlusIcon size={12} />
-            </button>
+            <>
+              <button className="btn btn-sm btn-ghost" onClick={() => fileInput.current?.click()} disabled={importing} title="HWP·HWPX·DOCX·PDF·Markdown 가져오기">
+                {importing ? "가져오는 중…" : "가져오기"}
+              </button>
+              <input
+                ref={fileInput}
+                type="file"
+                hidden
+                accept=".hwp,.hwpx,.docx,.pdf,.pptx,.xlsx,.md,.markdown,.txt"
+                onChange={(e) => importFile(e.target.files?.[0])}
+              />
+              <button className="icon-btn" onClick={() => createPage(null)} title="새 페이지">
+                <PlusIcon size={12} />
+              </button>
+            </>
           )}
         </div>
         <div className="tree-wrap">
@@ -172,7 +203,7 @@ export function WikiPage() {
       </aside>
 
       <article className="pane wiki-body">
-        {!pageId && <WikiIndex pages={pages} users={members} basePath={basePath} />}
+        {!pageId && <WikiIndex pages={pages} users={members} basePath={basePath} projectId={project.id} />}
         {pageId && !page && <div className="empty">불러오는 중…</div>}
 
         {page && !editing && (
@@ -187,6 +218,7 @@ export function WikiPage() {
                 ))}
                 <span className="current">{page.title}</span>
               </nav>
+              <ExportMenu projectId={project.id} pageId={page.id} hasChildren={pages.some((p) => p.parent_id === page.id)} />
               {canCreate && (
                 <button className="btn btn-sm" onClick={() => createPage(page.id)}>
                   <PlusIcon size={10} /> 하위 페이지

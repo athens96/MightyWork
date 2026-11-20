@@ -774,3 +774,23 @@ mark { background: color-mix(in srgb, var(--wait) 35%, transparent); color: inhe
 .lg-line.lg-mention { border-top: 1.5px dashed color-mix(in srgb, var(--run) 60%, transparent); }
 .lg-line.lg-parent { border-top: 2px dotted color-mix(in srgb, var(--ink2) 45%, transparent); }
 .graph-empty { font-size: 12px; }
+
+/* 내보내기 메뉴 (MightyCode 팝오버: r10, 그림자) */
+.menu-anchor { position: relative; }
+.popover {
+  position: absolute; z-index: 30; top: calc(100% + 6px); right: 0; min-width: 260px; padding: 6px;
+  background: var(--card); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow-popover);
+  display: flex; flex-direction: column; gap: 1px;
+}
+.menu-item {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 7px 10px;
+  border: none; border-radius: 7px; background: transparent; text-align: left; font-size: 12.5px; font-weight: 600;
+}
+.menu-item .muted { font-size: 11px; font-weight: 400; }
+.menu-item:hover:not(:disabled) { background: var(--subtle); }
+.menu-item:disabled { opacity: 0.6; cursor: progress; }
+.menu-sep { height: 1px; margin: 5px 4px; background: var(--line); }
+.menu-option { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 5px 10px; font-size: 12px; color: var(--ink2); }
+.menu-option select { height: 24px; font-size: 11.5px; }
+.menu-option input { accent-color: var(--accent); margin: 0; }
+.menu-error { padding: 4px 10px; }

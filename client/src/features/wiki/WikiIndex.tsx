@@ -1,5 +1,7 @@
 import { useMemo } from "react";
 import { Link, useSearchParams } from "react-router-dom";
+import { wikiApi } from "../../api";
+import { saveBlob } from "../../api/http";
 import { Avatar } from "../../components/Avatar";
 import { timeAgo } from "../../lib/time";
 import type { PageStatus, PageType, User, WikiPageSummary } from "../../types";
@@ -9,7 +11,7 @@ import { PAGE_STATUS_LABEL, PAGE_STATUS_TONE, PAGE_TYPE_LABEL } from "./pageProp
  * 위키 문서 목록 — Properties(타입·상태·담당자·태그)로 거르는 표 (옵시디언 Bases 와 같은 역할).
  * 필터는 URL(?type=&status=&owner=&tag=&q=)에 남아 링크로 공유할 수 있다.
  */
-export function WikiIndex({ pages, users, basePath }: { pages: WikiPageSummary[]; users: User[]; basePath: string }) {
+export function WikiIndex({ pages, users, basePath, projectId }: { pages: WikiPageSummary[]; users: User[]; basePath: string; projectId: string }) {
   const [params, setParams] = useSearchParams();
   const f = { type: params.get("type") ?? "", status: params.get("status") ?? "", owner: params.get("owner") ?? "", tag: params.get("tag") ?? "", q: params.get("q") ?? "" };
   const set = (key: keyof typeof f, value: string) => {
@@ -43,6 +45,18 @@ export function WikiIndex({ pages, users, basePath }: { pages: WikiPageSummary[]
         {filtered && (
           <button className="btn btn-sm btn-ghost" onClick={() => setParams({}, { replace: true })}>
             필터 초기화
+          </button>
+        )}
+        {pages.length > 0 && (
+          <button
+            className="btn btn-sm"
+            title="모든 페이지를 폴더 구조의 .md(옵시디언 호환) + wiki.html 로"
+            onClick={async () => {
+              const { blob, filename } = await wikiApi.exportZip(projectId);
+              saveBlob(blob, filename);
+            }}
+          >
+            전체 ZIP
           </button>
         )}
       </div>
