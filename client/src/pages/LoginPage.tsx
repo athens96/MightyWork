@@ -12,7 +12,8 @@ export function LoginPage() {
   const location = useLocation();
   const [error, setError] = useState<string | null>(null);
   const [theme] = useTheme();
-  const from = (location.state as { from?: Location } | null)?.from?.pathname ?? "/";
+  const fromLoc = (location.state as { from?: Location } | null)?.from;
+  const from = fromLoc ? fromLoc.pathname + (fromLoc.search ?? "") : "/";
 
   if (user) return <Navigate to={from} replace />;
 

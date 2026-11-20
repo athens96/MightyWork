@@ -139,3 +139,9 @@ export const UsersIcon = (p: P) => (
     <path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.6a3.5 3.5 0 0 1 0 6.8M18 14.5a6.5 6.5 0 0 1 3.5 5.5" />
   </Icon>
 );
+
+export const PlugIcon = (p: P) => (
+  <Icon {...p}>
+    <path d="M9 3v5M15 3v5M6 8h12v4a6 6 0 0 1-12 0zM12 18v3" />
+  </Icon>
+);

@@ -3,6 +3,9 @@ import { http, requestFile, upload } from "./http";
 export type ExportFormat = "md" | "html" | "docx" | "hwpx" | "hwp";
 import type {
   Comment,
+  ConsentRequest,
+  McpInfo,
+  OAuthGrant,
   Member,
   LocalGraph,
   PageLinks,
@@ -116,4 +119,13 @@ export const wikiApi = {
     http.get<UnlinkedMention[]>(`/projects/${projectId}/wiki/pages/${id}/unlinked-mentions`),
   linkMentions: (projectId: string, id: string, sources: Pick<UnlinkedMention, "source_type" | "source_id">[]) =>
     http.post<{ linked: number; documents: number }>(`/projects/${projectId}/wiki/pages/${id}/unlinked-mentions/link`, { sources }),
+};
+
+export const oauthApi = {
+  getRequest: (id: string) => http.get<ConsentRequest>(`/oauth/requests/${id}`),
+  decide: (id: string, approve: boolean, scopes: string[]) =>
+    http.post<{ redirect_to: string }>(`/oauth/requests/${id}/decision`, { approve, scopes }),
+  grants: () => http.get<OAuthGrant[]>("/oauth/grants"),
+  revokeGrant: (id: string) => http.delete(`/oauth/grants/${id}`),
+  mcpInfo: () => http.get<McpInfo>("/mcp-info"),
 };

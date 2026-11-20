@@ -32,6 +32,21 @@
 - 위키 목록의 '전체 ZIP': 페이지 트리를 폴더로 한 .md 묶음(옵시디언 볼트) + wiki.html
 - 위키 '가져오기': HWP·HWPX·DOCX·PDF·PPTX·XLSX·Markdown → 새 페이지 (생성 권한, 최대 20MB, 그림은 아직 제외). MightyWork 가 내보낸 .md 는 속성까지 복원
 
+### MCP 서버 (AI 앱 연결)
+- 주소: `<PUBLIC_URL>/mcp` (Streamable HTTP, **MCP 2026-07-28** — `server/discover`·무상태, 이전 버전 클라이언트도 SDK 가 처리)
+- 도구: `list_projects` · `search` · `list_tasks` · `get_task` · `create_task` · `update_task` · `add_comment` · `list_wiki_pages` · `get_wiki_page` · `create_wiki_page` · `update_wiki_page`
+- 권한: 토큰 scope(`mightywork:read` / `mightywork:write`) **와** 사용자의 실제 프로젝트 권한(보기·생성·편집)을 함께 확인
+- 인증: **OAuth 2.1** — 이 서버가 인가 서버를 겸함, 로그인은 기존 구글 로그인 + 동의 화면
+  - Protected Resource Metadata(RFC 9728), 401 `WWW-Authenticate: resource_metadata`
+  - 인가 서버 메타데이터(RFC 8414), PKCE S256 필수, resource 바인딩(RFC 8707, 토큰 aud = MCP 주소), 인가 응답 `iss`(RFC 9207)
+  - 클라이언트 등록: **Client ID Metadata Document(CIMD) 우선**, 동적 등록(RFC 7591)은 호환용 — CIMD 가져오기는 SSRF 방어(https·공개 주소·크기·시간 제한)
+  - refresh 토큰 회전 + 재사용 탐지, 폐기(RFC 7009), 액세스 토큰은 웹 앱 로그인 토큰과 다른 키·aud
+- 웹 앱 사이드바 하단 🔌 **연결된 앱**: MCP 주소·연결 방법(Claude Code / mcp.json), 허용한 앱 목록·해제(즉시 무효)
+
+```bash
+claude mcp add --transport http mightywork http://localhost:8000/mcp   # 브라우저에서 로그인·동의
+```
+
 일감 필드 (JIRA/Linear 스타일): 제목, 설명(Markdown), 상태(파이프라인 단계), 우선순위, 작업자, 보고자,
 시작일·종료일(시작일 ≤ 종료일), 추정치(pt), 레이블, 할 일 체크리스트, 덧글(Markdown), 변경 이력.
 
@@ -63,6 +78,8 @@ server/
     services/graph.py    # 로컬 그래프 (위키·일감 간선, BFS)
     services/export/     # 내보내기: prepare(묶기·링크) · markdown · html · docx(pandoc) · hangul(kordoc) · archive(zip)
     services/importer.py # 문서 가져오기 (kordoc → Markdown)
+    services/oauth/      # OAuth 2.1 인가 서버 (server: 토큰·코드·회전, cimd: 클라이언트 메타데이터 문서)
+    mcp_server.py        # MCP 서버(MCPServer): 도구·토큰 검증
   tools/kordoc/          # kordoc·rhwp 버전 고정 (package.json / lock)
     api/deps.py          # 의존성: 현재 사용자, 현재 프로젝트, DB, PATCH 헬퍼
     api/routes/          # auth, users, projects, members, tasks, comments, wiki, knowledge
@@ -105,6 +122,9 @@ client/
 | GET | `/projects/{pid}/wiki/pages/{id}/export?format=md\|html\|docx\|hwpx\|hwp` | 내보내기 (`children`, `print`, `preset`) |
 | GET | `/projects/{pid}/wiki/export.zip` | 위키 전체 ZIP |
 | POST | `/projects/{pid}/wiki/import` | 문서 가져오기 (multipart `file`, `parent_id`) |
+| GET/DELETE | `/oauth/grants`, `/oauth/grants/{id}` | 연결된 앱 목록 / 해제 |
+
+OAuth·MCP 엔드포인트 (루트): `POST /mcp` · `GET /.well-known/oauth-protected-resource[/mcp]` · `GET /.well-known/oauth-authorization-server` · `GET /oauth/authorize` · `POST /oauth/token` · `POST /oauth/register` · `POST /oauth/revoke`
 | GET | `/projects/{pid}/search?q=` | 일감 + 위키 검색 (점수순) |
 | GET/POST | `/projects/{pid}/wiki/pages` | 페이지 목록(본문 제외, `?page_type=&status=&tag=&owner_id=` 필터) / 생성 |
 | GET/PATCH/DELETE | `/projects/{pid}/wiki/pages/{id}` | 조회 / 수정·이동 / 삭제(하위 페이지 있으면 409) |

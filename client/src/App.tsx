@@ -3,6 +3,8 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { RequireAuth } from "./auth/RequireAuth";
 import { Layout } from "./components/Layout";
 import { LoginPage } from "./pages/LoginPage";
+import { ConsentPage } from "./features/oauth/ConsentPage";
+import { ConnectedAppsPage } from "./features/oauth/ConnectedAppsPage";
 import { ProjectsProvider } from "./features/projects/ProjectsContext";
 import { ProjectListPage } from "./features/projects/ProjectListPage";
 import { ProjectLayout } from "./features/projects/ProjectLayout";
@@ -23,6 +25,8 @@ export default function App() {
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route element={<RequireAuth />}>
+        {/* OAuth 동의 화면 — 사이드바 없이 단독 (로그인 필요) */}
+        <Route path="/oauth/consent" element={<ConsentPage />} />
         <Route
           element={
             <ProjectsProvider>
@@ -32,6 +36,7 @@ export default function App() {
         >
           <Route index element={<Navigate to="/projects" replace />} />
           <Route path="/projects" element={<ProjectListPage />} />
+          <Route path="/settings/apps" element={<ConnectedAppsPage />} />
           <Route path="/projects/:projectId" element={<ProjectLayout />}>
             <Route index element={<Navigate to="tasks" replace />} />
             <Route path="tasks" element={<TaskBoardPage />}>

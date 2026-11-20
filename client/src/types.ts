@@ -189,3 +189,27 @@ export interface TaskActivity {
   new: unknown;
   created_at: string;
 }
+
+export interface ConsentRequest {
+  client_id: string;
+  client_name: string;
+  registration: "cimd" | "dcr";
+  redirect_host: string;
+  requested_scopes: string[];
+  scope_labels: Record<string, string>;
+}
+
+export interface OAuthGrant {
+  id: string;
+  client_id: string;
+  client_name: string;
+  scopes: string[];
+  created_at: string;
+  last_used_at: string | null;
+}
+
+export interface McpInfo {
+  url: string;
+  issuer: string;
+  scopes: string[];
+}

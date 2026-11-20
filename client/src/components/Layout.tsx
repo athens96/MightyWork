@@ -3,7 +3,7 @@ import { Link, NavLink, Outlet, useMatch } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { useProjects } from "../features/projects/ProjectsContext";
 import { useTheme } from "../theme";
-import { BoardIcon, DocIcon, FolderIcon, GridIcon, LogoutIcon, MoonIcon, PlusIcon, SearchIcon, SunIcon } from "./icons";
+import { BoardIcon, DocIcon, FolderIcon, GridIcon, LogoutIcon, MoonIcon, PlugIcon, PlusIcon, SearchIcon, SunIcon } from "./icons";
 
 /** MightyCode 사이드바: 검색 → 홈 행 → 섹션 머리 → 프로젝트 행(+하위 일감/위키) → 하단 바 */
 export function Layout() {
@@ -70,6 +70,9 @@ export function Layout() {
           <span className="who" title={user?.email}>
             {user?.name || user?.email}
           </span>
+          <NavLink to="/settings/apps" className="icon-btn" title="연결된 앱 (MCP)">
+            <PlugIcon />
+          </NavLink>
           <button className="icon-btn" onClick={toggleTheme} title={theme === "dark" ? "라이트 모드" : "다크 모드"}>
             {theme === "dark" ? <SunIcon /> : <MoonIcon />}
           </button>
