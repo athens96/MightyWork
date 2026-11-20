@@ -19,6 +19,10 @@ export function Layout() {
   return (
     <div className="app">
       <aside className="sidebar">
+        <Link to="/projects" className="side-brand" title="MightyWork">
+          <img src="/logo.png" alt="" width={22} height={22} />
+          MightyWork
+        </Link>
         <label className="side-search">
           <SearchIcon size={13} />
           <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="프로젝트 검색" />

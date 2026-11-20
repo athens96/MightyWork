@@ -4,7 +4,9 @@ from contextlib import asynccontextmanager
 
 from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from pathlib import Path
+
+from fastapi.responses import FileResponse, JSONResponse
 
 from app.api.routes import auth, comments, export, importer, knowledge, members, oauth, projects, tasks, users, wiki
 from app.core.config import Settings
@@ -88,6 +90,11 @@ def create_app(settings: Settings | None = None, db: Database | None = None) -> 
                 "resource_name": settings.app_name,
             }
         )
+
+    @app.get("/icon.png", include_in_schema=False)
+    def icon() -> FileResponse:
+        """앱 아이콘 (MCP 클라이언트가 서버 아이콘으로 표시)."""
+        return FileResponse(Path(__file__).parent / "static/icon.png", media_type="image/png", headers={"Cache-Control": "public, max-age=86400"})
 
     # 마지막에: "/" 마운트는 모든 경로와 맞으므로 위의 라우트 뒤에 둔다 → /mcp, /.well-known/oauth-protected-resource/mcp
     app.mount("/", mcp_app)

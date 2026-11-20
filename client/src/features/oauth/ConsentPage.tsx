@@ -44,9 +44,12 @@ export function ConsentPage() {
   return (
     <div className="login">
       <div className="card consent-card">
-        <span className="tile-icon consent-icon">
-          <PlugIcon size={20} />
-        </span>
+        <div className="consent-brand">
+          <img src="/logo.png" alt="MightyWork" width={44} height={44} />
+          <span className="consent-link">
+            <PlugIcon size={14} />
+          </span>
+        </div>
         {error && (
           <>
             <h1 className="consent-title">연결할 수 없습니다</h1>

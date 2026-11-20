@@ -819,3 +819,12 @@ mark { background: color-mix(in srgb, var(--wait) 35%, transparent); color: inhe
 .snippet-head { display: flex; align-items: center; justify-content: space-between; padding: 4px 6px 4px 10px; background: var(--card-raised); font-size: 11.5px; font-weight: 600; color: var(--ink2); }
 .snippet pre { margin: 0; padding: 10px 12px; font-family: var(--font-mono); font-size: 12px; background: var(--code-surface); color: var(--code-text); overflow-x: auto; }
 .side-footer a.icon-btn.active { color: var(--accent); }
+
+/* 브랜드 (MightyCode 마스코트 아이콘) */
+.side-brand { display: flex; align-items: center; gap: 8px; margin: 10px 10px 0; font-size: 13px; font-weight: 700; color: var(--ink); }
+.side-brand img { border-radius: 50%; }
+.side-brand + .side-search { margin-top: 8px; }
+.brand-logo { border-radius: 50%; filter: drop-shadow(0 4px 10px rgb(36 89 230 / 0.25)); }
+.consent-brand { display: flex; align-items: center; gap: 8px; }
+.consent-brand img { border-radius: 50%; }
+.consent-link { display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); }

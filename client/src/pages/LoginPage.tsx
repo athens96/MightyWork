@@ -3,7 +3,6 @@ import { GoogleLogin } from "@react-oauth/google";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { ApiError } from "../api/http";
-import { GridIcon } from "../components/icons";
 import { useTheme } from "../theme";
 
 export function LoginPage() {
@@ -20,9 +19,7 @@ export function LoginPage() {
   return (
     <div className="login">
       <div className="card login-card">
-        <span className="tile-icon">
-          <GridIcon size={20} />
-        </span>
+        <img className="brand-logo" src="/logo.png" alt="MightyWork" width={88} height={88} />
         <div>
           <h1 className="dash-title">MightyWork</h1>
           <p className="dash-sub">프로젝트별 일감 파이프라인 · 위키</p>

@@ -15,7 +15,7 @@ from mcp.server.auth.provider import AccessToken, TokenVerifier
 from mcp.server.auth.settings import AuthSettings
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.server.transport_security import TransportSecuritySettings
-from mcp.types import ToolAnnotations
+from mcp.types import Icon, ToolAnnotations
 from pydantic import AnyHttpUrl, ValidationError
 
 from app.core.config import Settings
@@ -70,6 +70,7 @@ def build_mcp(settings: Settings, db: Database) -> MCPServer:
         "MightyWork",
         instructions=INSTRUCTIONS,
         website_url=settings.app_url,
+        icons=[Icon(src=f"{oauth.base_url(settings)}/icon.png", mime_type="image/png", sizes=["192x192"])],
         token_verifier=MightyWorkTokenVerifier(settings, db),
         auth=AuthSettings(
             issuer_url=AnyHttpUrl(oauth.issuer(settings)),
