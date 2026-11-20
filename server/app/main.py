@@ -3,7 +3,7 @@ import logging
 from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import auth, comments, export, knowledge, members, projects, tasks, users, wiki
+from app.api.routes import auth, comments, export, importer, knowledge, members, projects, tasks, users, wiki
 from app.core.config import Settings
 from app.db import Database
 
@@ -43,6 +43,7 @@ def create_app(settings: Settings | None = None, db: Database | None = None) -> 
     api.include_router(wiki.router)
     api.include_router(knowledge.router)
     api.include_router(export.router)
+    api.include_router(importer.router)
     app.include_router(api)
 
     return app
