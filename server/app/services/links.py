@@ -48,11 +48,20 @@ def task_numbers(md: str, project_key: str) -> list[int]:
     return out
 
 
+def page_names(page: WikiPage) -> list[str]:
+    """페이지를 가리키는 이름들: 제목 + 별칭."""
+    return [page.title, *page.aliases]
+
+
 def pages_by_title(pages: list[WikiPage]) -> dict[str, WikiPage]:
-    """제목 → 페이지. 같은 제목이 여럿이면 가장 먼저 만든 페이지."""
+    """이름 → 페이지. 제목이 별칭보다 우선하고, 같은 이름이 여럿이면 가장 먼저 만든 페이지."""
     result: dict[str, WikiPage] = {}
-    for p in sorted(pages, key=lambda p: p.created_at):
+    ordered = sorted(pages, key=lambda p: p.created_at)
+    for p in ordered:
         result.setdefault(norm_title(p.title), p)
+    for p in ordered:
+        for alias in p.aliases:
+            result.setdefault(norm_title(alias), p)
     return result
 
 
@@ -61,12 +70,15 @@ def project_pages(db: Database, project: Project) -> list[WikiPage]:
 
 
 def backlinks(db: Database, project: Project, page: WikiPage) -> list[WikiPage]:
-    key = norm_title(page.title)
-    return [
-        p
-        for p in project_pages(db, project)
-        if p.id != page.id and key in {norm_title(t) for t in link_targets(p.content)}
-    ]
+    """이 페이지(제목 또는 별칭으로 실제 해석되는)를 링크한 페이지."""
+    pages = project_pages(db, project)
+    by_title = pages_by_title(pages)
+
+    def points_here(title: str) -> bool:
+        target = by_title.get(norm_title(title))
+        return target is not None and target.id == page.id
+
+    return [p for p in pages if p.id != page.id and any(points_here(t) for t in link_targets(p.content))]
 
 
 def pages_mentioning_task(db: Database, project: Project, task: Task) -> list[WikiPage]:
@@ -105,3 +117,56 @@ def propagate_rename(db: Database, project: Project, page: WikiPage, old_title: 
             db.tasks.update(t.model_copy(update={"description": new}))
             changed += 1
     return changed
+
+
+# ---------------------------------------------------------------- 링크 안 된 언급
+
+# 언급으로 보지 않을 영역: 코드, 기존 [[링크]], [텍스트](url) 링크
+_MASK = re.compile(r"```.*?```|`[^`\n]*`|\[\[[^\[\]\n]*\]\]|\[[^\[\]\n]*\]\([^)\n]*\)", re.S)
+
+
+def _masked(md: str) -> str:
+    """언급 검사용: 제외 영역을 같은 길이의 공백으로 덮어 위치(index)를 보존."""
+    return _MASK.sub(lambda m: " " * len(m.group(0)), md)
+
+
+def _names_pattern(names: list[str]) -> re.Pattern | None:
+    names = sorted({n for n in names if len(n.strip()) >= 2}, key=len, reverse=True)  # 긴 이름 먼저
+    if not names:
+        return None
+    alts = "|".join(r"\s+".join(map(re.escape, n.split())) for n in names)
+    # 영문·숫자 단어 중간은 제외. 한글 조사(…를, …에서)는 바로 붙어도 언급으로 본다.
+    return re.compile(rf"(?<![A-Za-z0-9_])(?:{alts})(?![A-Za-z0-9_])", re.IGNORECASE)
+
+
+def find_mentions(md: str, names: list[str]) -> list[tuple[int, int, str]]:
+    pattern = _names_pattern(names)
+    if pattern is None:
+        return []
+    masked = _masked(md)
+    return [(m.start(), m.end(), md[m.start() : m.end()]) for m in pattern.finditer(masked)]
+
+
+def mention_snippets(md: str, spans: list[tuple[int, int, str]], width: int = 40, limit: int = 2) -> list[str]:
+    out, covered_until = [], -1
+    for start, end, _ in spans:
+        if start < covered_until:  # 앞 미리보기 범위에 이미 포함된 언급은 건너뜀
+            continue
+        a, b = max(0, start - width), min(len(md), end + width)
+        out.append(("…" if a else "") + " ".join(md[a:b].split()) + ("…" if b < len(md) else ""))
+        covered_until = b
+        if len(out) >= limit:
+            break
+    return out
+
+
+def link_mentions(md: str, page: WikiPage) -> str:
+    """링크 안 된 언급을 [[제목]] (다른 표기면 [[제목|원래 표기]]) 로 바꾼다."""
+    spans = find_mentions(md, page_names(page))
+    out, last = [], 0
+    for start, end, text in spans:
+        out.append(md[last:start])
+        out.append(f"[[{page.title}]]" if norm_title(text) == norm_title(page.title) else f"[[{page.title}|{text}]]")
+        last = end
+    out.append(md[last:])
+    return "".join(out)

@@ -26,10 +26,10 @@ export function useLinkResolver(
   const { onMissing } = opts;
 
   return useMemo(() => {
+    // 제목이 별칭보다 우선 (서버 pages_by_title 과 같은 규칙)
     const byTitle = new Map<string, string>();
-    for (const p of [...pages].sort((a, b) => (a.updated_at < b.updated_at ? -1 : 1))) {
-      if (!byTitle.has(normTitle(p.title))) byTitle.set(normTitle(p.title), p.id);
-    }
+    for (const p of pages) if (!byTitle.has(normTitle(p.title))) byTitle.set(normTitle(p.title), p.id);
+    for (const p of pages) for (const a of p.aliases ?? []) if (!byTitle.has(normTitle(a))) byTitle.set(normTitle(a), p.id);
     const byNumber = new Map(tasks.map((t) => [t.number, t]));
     return {
       projectId: project.id,

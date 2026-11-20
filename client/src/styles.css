@@ -702,3 +702,16 @@ a.conn-chip:hover { border-color: var(--accent); background: var(--accent-soft);
 .search-row .key-badge[class*="tone-"] { background: var(--tone-soft); color: var(--tone-text); }
 .search-row .row-meta { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 mark { background: color-mix(in srgb, var(--wait) 35%, transparent); color: inherit; border-radius: 2px; padding: 0 1px; }
+
+/* 별칭 · 링크 안 된 언급 */
+.alias-list { display: inline-flex; align-items: center; gap: 4px; margin-left: 10px; }
+.alias-editor { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 4px 6px; border: 1px solid var(--line); border-radius: var(--r-entry); font-size: 12px; }
+.alias-editor input { flex: 1; min-width: 160px; height: 22px; padding: 0 4px; border: none; background: transparent; box-shadow: none; font-size: 12px; }
+.alias-editor .tag.removable button { font-size: 12px; line-height: 1; }
+.conn-group.mentions { flex-direction: column; align-items: stretch; gap: 6px; }
+.conn-group.mentions .conn-label { display: flex; align-items: center; gap: 8px; }
+.mention { position: relative; padding: 8px 10px; border: 1px dashed var(--line-strong); border-radius: var(--r-row); background: var(--subtle); }
+.mention-title { font-size: 12.5px; font-weight: 600; color: var(--ink); }
+.mention-title:hover { color: var(--accent); }
+.mention-snippet { margin-top: 3px; font-size: 12px; color: var(--ink2); line-height: 1.5; }
+.mention-link { position: absolute; top: 6px; right: 6px; }

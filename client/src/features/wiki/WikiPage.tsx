@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { wikiApi } from "../../api";
 import { ApiError } from "../../api/http";
-import type { PageLinks, WikiPage as WikiPageType, WikiPageSummary } from "../../types";
+import type { PageLinks, UnlinkedMention, WikiPage as WikiPageType, WikiPageSummary } from "../../types";
 import { useCurrentProject } from "../projects/ProjectLayout";
 import { ChevronIcon, EditIcon, PlusIcon, TrashIcon } from "../../components/icons";
 import { Markdown } from "../../components/Markdown";
@@ -24,7 +24,9 @@ export function WikiPage() {
   const [pages, setPages] = useState<WikiPageSummary[]>([]);
   const [page, setPage] = useState<WikiPageType | null>(null);
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState({ title: "", content: "" });
+  const [draft, setDraft] = useState({ title: "", content: "", aliases: [] as string[] });
+  const [aliasDraft, setAliasDraft] = useState("");
+  const [mentions, setMentions] = useState<UnlinkedMention[]>([]);
   const [links, setLinks] = useState<PageLinks | null>(null);
 
   const reloadTree = useCallback(() => wikiApi.list(project.id).then(setPages), [project.id]);
@@ -45,7 +47,7 @@ export function WikiPage() {
         if (cancelled) return;
         setPage(p);
         if (openInEditMode) {
-          setDraft({ title: p.title, content: p.content });
+          setDraft({ title: p.title, content: p.content, aliases: p.aliases });
           setEditing(true);
         }
       },
@@ -73,13 +75,31 @@ export function WikiPage() {
   const resolver = useLinkResolver(project, { pages, onMissing: canCreate ? onMissing : undefined });
 
   const reloadLinks = useCallback(
-    (id: string) => wikiApi.links(project.id, id).then(setLinks, () => setLinks(null)),
+    (id: string) =>
+      Promise.all([
+        wikiApi.links(project.id, id).then(setLinks, () => setLinks(null)),
+        wikiApi.unlinkedMentions(project.id, id).then(setMentions, () => setMentions([])),
+      ]),
     [project.id],
   );
   useEffect(() => {
     setLinks(null);
+    setMentions([]);
     if (pageId) reloadLinks(pageId);
   }, [pageId, reloadLinks]);
+
+  // 링크 안 된 언급 → [[링크]] 로 바꾸기 (편집 권한)
+  const linkMentions = async (sources: UnlinkedMention[]) => {
+    if (!page || sources.length === 0) return;
+    await wikiApi.linkMentions(project.id, page.id, sources);
+    await reloadLinks(page.id);
+  };
+
+  const addAlias = () => {
+    const v = aliasDraft.trim();
+    if (v && !draft.aliases.some((a) => a.toLowerCase() === v.toLowerCase())) setDraft({ ...draft, aliases: [...draft.aliases, v] });
+    setAliasDraft("");
+  };
 
   /** 상위 페이지 경로(루트 → 부모 순) */
   const ancestors = (parentId: string | null): WikiPageSummary[] => {
@@ -95,7 +115,7 @@ export function WikiPage() {
 
   const startEdit = () => {
     if (!page) return;
-    setDraft({ title: page.title, content: page.content });
+    setDraft({ title: page.title, content: page.content, aliases: page.aliases });
     setEditing(true);
   };
 
@@ -172,13 +192,36 @@ export function WikiPage() {
             </div>
             <div className="wiki-doc">
               <h1 className="wiki-doc-title">{page.title}</h1>
-              <p className="wiki-doc-meta">{timeAgo(page.updated_at)} 수정</p>
+              <p className="wiki-doc-meta">
+                {timeAgo(page.updated_at)} 수정
+                {page.aliases.length > 0 && (
+                  <span className="alias-list">
+                    별칭
+                    {page.aliases.map((a) => (
+                      <span key={a} className="tag">
+                        {a}
+                      </span>
+                    ))}
+                  </span>
+                )}
+              </p>
               {page.content ? (
                 <Markdown links={resolver}>{page.content}</Markdown>
               ) : (
                 <p className="muted">내용 없음{canEdit && " — 편집을 눌러 작성하세요."}</p>
               )}
-              {links && <Connections links={links} basePath={basePath} taskBase={`/projects/${project.id}/tasks`} projectKey={project.key} />}
+              {links && (
+                <Connections
+                  links={links}
+                  mentions={mentions}
+                  names={[page.title, ...page.aliases]}
+                  canLink={canEdit}
+                  onLink={linkMentions}
+                  basePath={basePath}
+                  taskBase={`/projects/${project.id}/tasks`}
+                  projectKey={project.key}
+                />
+              )}
             </div>
           </>
         )}
@@ -191,6 +234,29 @@ export function WikiPage() {
               onChange={(e) => setDraft({ ...draft, title: e.target.value })}
               placeholder="제목"
             />
+            <div className="alias-editor">
+              <span className="muted">별칭</span>
+              {draft.aliases.map((a) => (
+                <span key={a} className="tag removable">
+                  {a}
+                  <button onClick={() => setDraft({ ...draft, aliases: draft.aliases.filter((x) => x !== a) })} aria-label={`${a} 제거`}>
+                    ×
+                  </button>
+                </span>
+              ))}
+              <input
+                value={aliasDraft}
+                onChange={(e) => setAliasDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if ((e.key === "Enter" || e.key === ",") && !e.nativeEvent.isComposing) {
+                    e.preventDefault();
+                    addAlias();
+                  }
+                }}
+                onBlur={addAlias}
+                placeholder="다른 이름 (예: SSO) 입력 후 Enter"
+              />
+            </div>
             <div className="editor-split">
               <textarea
                 value={draft.content}
@@ -230,8 +296,26 @@ export function WikiPage() {
 }
 
 /** 문서 하단 '연결': 이 문서가 링크한 문서 · 이 문서를 링크한 문서(백링크) · 언급한 일감 */
-function Connections({ links, basePath, taskBase, projectKey }: { links: PageLinks; basePath: string; taskBase: string; projectKey: string }) {
-  const empty = !links.outgoing.length && !links.backlinks.length && !links.tasks.length;
+function Connections({
+  links,
+  mentions,
+  names,
+  canLink,
+  onLink,
+  basePath,
+  taskBase,
+  projectKey,
+}: {
+  links: PageLinks;
+  mentions: UnlinkedMention[];
+  names: string[]; // 미리보기에서 강조할 제목·별칭
+  canLink: boolean;
+  onLink: (sources: UnlinkedMention[]) => void;
+  basePath: string;
+  taskBase: string;
+  projectKey: string;
+}) {
+  const empty = !links.outgoing.length && !links.backlinks.length && !links.tasks.length && !mentions.length;
   return (
     <section className="connections">
       <h3>연결</h3>
@@ -266,6 +350,37 @@ function Connections({ links, basePath, taskBase, projectKey }: { links: PageLin
           )}
         </div>
       )}
+      {mentions.length > 0 && (
+        <div className="conn-group mentions">
+          <span className="conn-label">
+            링크 안 된 언급 {mentions.reduce((n, m) => n + m.count, 0)}
+            {canLink && (
+              <button className="btn btn-sm" onClick={() => onLink(mentions)}>
+                모두 링크로 바꾸기
+              </button>
+            )}
+          </span>
+          {mentions.map((m) => (
+            <div key={m.source_type + m.source_id} className="mention">
+              <Link to={m.source_type === "wiki" ? `${basePath}/${m.source_id}` : `${taskBase}/${m.source_id}`} className="mention-title">
+                {m.source_type === "task" ? `${projectKey}-${m.number} ` : ""}
+                {m.title}
+                <span className="muted"> · {m.count}곳</span>
+              </Link>
+              {m.snippets.map((s, i) => (
+                <p key={i} className="mention-snippet">
+                  {highlightNames(s, names)}
+                </p>
+              ))}
+              {canLink && (
+                <button className="btn btn-sm btn-ghost mention-link" onClick={() => onLink([m])}>
+                  링크로 바꾸기
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
       {links.tasks.length > 0 && (
         <div className="conn-group">
           <span className="conn-label">언급한 일감 {links.tasks.length}</span>
@@ -278,4 +393,11 @@ function Connections({ links, basePath, taskBase, projectKey }: { links: PageLin
       )}
     </section>
   );
+}
+
+/** 미리보기 문장에서 제목·별칭을 강조 (대소문자 무시, 긴 이름 우선) */
+function highlightNames(text: string, names: string[]) {
+  const alts = names.filter((n) => n.trim().length >= 2).sort((a, b) => b.length - a.length).map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  if (!alts.length) return text;
+  return text.split(new RegExp(`(${alts.join("|")})`, "gi")).map((part, i) => (i % 2 ? <mark key={i}>{part}</mark> : part));
 }

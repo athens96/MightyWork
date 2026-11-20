@@ -87,6 +87,7 @@ export interface WikiPage {
   title: string;
   content: string;
   parent_id: string | null;
+  aliases: string[]; // 별칭(동의어)
   project_id: string;
   created_by: string;
   updated_by: string;
@@ -98,11 +99,12 @@ export interface WikiPageSummary {
   id: string;
   title: string;
   parent_id: string | null;
+  aliases: string[];
   updated_at: string;
 }
 
 export type WikiPageCreate = Pick<WikiPage, "title"> & Partial<Pick<WikiPage, "content" | "parent_id">>;
-export type WikiPageUpdate = Partial<Pick<WikiPage, "title" | "content" | "parent_id">>;
+export type WikiPageUpdate = Partial<Pick<WikiPage, "title" | "content" | "parent_id" | "aliases">>;
 
 export interface TaskRef {
   id: string;
@@ -126,6 +128,15 @@ export interface SearchHit {
   score: number;
   number: number | null;
   stage: PipelineStage | null;
+}
+
+export interface UnlinkedMention {
+  source_type: "wiki" | "task";
+  source_id: string;
+  title: string;
+  number: number | null;
+  count: number;
+  snippets: string[];
 }
 
 export interface Comment {

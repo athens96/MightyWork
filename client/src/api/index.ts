@@ -4,6 +4,7 @@ import type {
   Member,
   PageLinks,
   SearchHit,
+  UnlinkedMention,
   Permission,
   PipelineStage,
   PipelineStageInfo,
@@ -92,4 +93,8 @@ export const wikiApi = {
     http.patch<WikiPage>(`/projects/${projectId}/wiki/pages/${id}`, body),
   remove: (projectId: string, id: string) => http.delete(`/projects/${projectId}/wiki/pages/${id}`),
   links: (projectId: string, id: string) => http.get<PageLinks>(`/projects/${projectId}/wiki/pages/${id}/links`),
+  unlinkedMentions: (projectId: string, id: string) =>
+    http.get<UnlinkedMention[]>(`/projects/${projectId}/wiki/pages/${id}/unlinked-mentions`),
+  linkMentions: (projectId: string, id: string, sources: Pick<UnlinkedMention, "source_type" | "source_id">[]) =>
+    http.post<{ linked: number; documents: number }>(`/projects/${projectId}/wiki/pages/${id}/unlinked-mentions/link`, { sources }),
 };
