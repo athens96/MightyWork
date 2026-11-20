@@ -21,3 +21,8 @@ class Settings(BaseSettings):
     data_dir: Path = Path("data")
 
     cors_origins: list[str] = ["http://localhost:5174"]
+
+    # 한글(HWPX/HWP) 변환 엔진 kordoc — server/tools/kordoc 에서 `npm ci` 로 설치 (Node.js 20+)
+    kordoc_node: str = "node"
+    kordoc_cli: Path = Path(__file__).resolve().parents[2] / "tools/kordoc/node_modules/kordoc/dist/cli.js"
+    kordoc_timeout_sec: int = 120

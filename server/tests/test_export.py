@@ -108,3 +108,50 @@ def test_docx_sandbox_blocks_local_files(auth_client, pid, tmp_path):
     assert res.status_code == 200
     names = zipfile.ZipFile(io.BytesIO(res.content)).namelist()
     assert not any(n.startswith("word/media/") for n in names)  # 서버 파일을 끌어오지 않음
+
+
+# ---------------------------------------------------------------- 한글 (kordoc)
+
+from app.core.config import Settings
+from app.services.export.hangul import _tasks_to_symbols, available, run_kordoc
+
+needs_kordoc = pytest.mark.skipif(not available(Settings(_env_file=None)), reason="kordoc 미설치 (server/tools/kordoc 에서 npm ci)")
+
+
+def test_task_list_symbols_skip_code():
+    md = "- [x] 완료\n- [ ] 할 일\n```\n- [x] 코드\n```"
+    assert _tasks_to_symbols(md) == "- ☑ 완료\n- ☐ 할 일\n```\n- [x] 코드\n```"
+
+
+@needs_kordoc
+def test_hwpx_export_is_valid(app, auth_client, pid, tree, tmp_path):
+    root, _ = tree
+    res = get(auth_client, pid, root["id"], format="hwpx", children=True)
+    assert res.status_code == 200, res.text
+    assert res.headers["content-type"] == "application/hwp+zip"
+    z = zipfile.ZipFile(io.BytesIO(res.content))
+    assert z.read("mimetype") == b"application/hwp+zip"
+    body = "".join(z.read(n).decode("utf-8", "ignore") for n in z.namelist() if n.startswith("Contents/section"))
+    assert "개발 가이드" in body and "코딩 규칙" in body and "카멜케이스" in body and "☑" in body
+    # kordoc 자체 구조 검증 통과
+    out = tmp_path / "out.hwpx"
+    out.write_bytes(res.content)
+    result = run_kordoc(app.state.settings, ["validate", str(out)], tmp_path)
+    assert "통과" in result.stderr + result.stdout
+
+
+@needs_kordoc
+def test_hwp_export_is_ole_binary(auth_client, pid, tree):
+    root, _ = tree
+    res = get(auth_client, pid, root["id"], format="hwp", preset="minutes")
+    assert res.status_code == 200, res.text
+    assert res.content[:8] == bytes.fromhex("d0cf11e0a1b11ae1")  # HWP 5.0 = OLE 복합 문서
+    assert unquote(res.headers["content-disposition"].split("''")[1]) == "개발 가이드.hwp"
+
+
+def test_hangul_export_without_converter_returns_503(app, auth_client, pid, tree, tmp_path):
+    root, _ = tree
+    app.state.settings = app.state.settings.model_copy(update={"kordoc_cli": tmp_path / "missing.js"})
+    res = get(auth_client, pid, root["id"], format="hwpx")
+    assert res.status_code == 503 and "npm ci" in res.json()["detail"]
+    assert get(auth_client, pid, root["id"], format="hwpx", preset="nope").status_code == 422

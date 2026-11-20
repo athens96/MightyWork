@@ -9,8 +9,8 @@ server/data/
 __pycache__/
 .pytest_cache/
 
-# client
-client/node_modules/
+# node (client, server/tools/kordoc)
+node_modules/
 client/dist/
 
 # tools

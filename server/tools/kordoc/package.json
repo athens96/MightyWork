@@ -1,0 +1,10 @@
+{
+  "name": "mightywork-kordoc",
+  "private": true,
+  "description": "위키 HWPX/HWP 내보내기·가져오기용 변환 엔진 (kordoc + rhwp). 버전 고정.",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@rhwp/core": "0.9.1",
+    "kordoc": "4.25.2"
+  }
+}
