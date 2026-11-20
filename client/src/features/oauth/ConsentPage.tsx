@@ -45,7 +45,7 @@ export function ConsentPage() {
     <div className="login">
       <div className="card consent-card">
         <div className="consent-brand">
-          <img src="/logo.png" alt="MightyWork" width={44} height={44} />
+          <img src="/mascot-256.png" alt="MightyWork" width={44} height={44} />
           <span className="consent-link">
             <PlugIcon size={14} />
           </span>

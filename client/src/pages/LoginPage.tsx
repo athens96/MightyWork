@@ -19,7 +19,7 @@ export function LoginPage() {
   return (
     <div className="login">
       <div className="card login-card">
-        <img className="brand-logo" src="/logo.png" alt="MightyWork" width={88} height={88} />
+        <img className="brand-logo" src="/mascot-256.png" alt="MightyWork" width={88} height={88} />
         <div>
           <h1 className="dash-title">MightyWork</h1>
           <p className="dash-sub">프로젝트별 일감 파이프라인 · 위키</p>

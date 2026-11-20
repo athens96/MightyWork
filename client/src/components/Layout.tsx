@@ -20,7 +20,7 @@ export function Layout() {
     <div className="app">
       <aside className="sidebar">
         <Link to="/projects" className="side-brand" title="MightyWork">
-          <img src="/logo.png" alt="" width={22} height={22} />
+          <img src="/favicon.svg" alt="" width={22} height={22} />
           MightyWork
         </Link>
         <label className="side-search">
