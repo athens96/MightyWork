@@ -1,0 +1,18 @@
+# env / secrets
+.env
+.env.*
+!.env.example
+
+# server
+server/.venv/
+server/data/
+__pycache__/
+.pytest_cache/
+
+# client
+client/node_modules/
+client/dist/
+
+# tools
+.omc/
+.DS_Store
