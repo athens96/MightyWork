@@ -715,3 +715,31 @@ mark { background: color-mix(in srgb, var(--wait) 35%, transparent); color: inhe
 .mention-title:hover { color: var(--accent); }
 .mention-snippet { margin-top: 3px; font-size: 12px; color: var(--ink2); line-height: 1.5; }
 .mention-link { position: absolute; top: 6px; right: 6px; }
+
+/* 위키 Properties · 문서 목록 */
+.props-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: -8px 0 18px; }
+.type-badge { display: inline-flex; align-items: center; height: 18px; padding: 0 7px; border-radius: 5px; background: var(--card-raised); border: 1px solid var(--line); font-size: 10.5px; font-weight: 700; color: var(--ink2); }
+.props-owner { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--ink2); }
+.tag-link { cursor: pointer; text-decoration: none; }
+.tag-link:hover { border-color: var(--accent); color: var(--accent); }
+.props-editor { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 6px 8px; border: 1px solid var(--line); border-radius: var(--r-entry); background: var(--card-raised); font-size: 12px; }
+.props-editor label { display: inline-flex; align-items: center; gap: 6px; }
+.props-editor label > span, .props-tags > span { color: var(--ink3); font-weight: 600; }
+.props-editor select { height: 24px; }
+.props-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; flex: 1; min-width: 220px; }
+.props-tags input { flex: 1; min-width: 120px; height: 22px; padding: 0 4px; border: none; background: transparent; box-shadow: none; font-size: 12px; }
+.wiki-index { display: flex; flex-direction: column; min-height: 0; }
+.index-filters { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+.index-filters input { width: 180px; height: 26px; font-size: 12px; }
+.index-filters select { height: 26px; font-size: 12px; background: var(--card); }
+.index-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.index-table th { text-align: left; padding: 8px 12px; font-size: 11px; font-weight: 700; color: var(--ink3); border-bottom: 1px solid var(--line); background: var(--card-raised); }
+.index-table td { padding: 8px 12px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.index-table tr:hover td { background: var(--subtle); }
+.index-title { font-weight: 600; color: var(--ink); }
+.index-title:hover { color: var(--accent); }
+.index-alias { font-size: 11.5px; }
+.index-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+.index-tags .tag { border: 1px solid var(--line); background: var(--card-raised); }
+.nowrap { white-space: nowrap; }
+.is-deprecated .index-title, .tree a.is-deprecated span { text-decoration: line-through; color: var(--ink3); }

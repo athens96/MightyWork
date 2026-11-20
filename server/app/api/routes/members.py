@@ -69,11 +69,13 @@ def update_member(project: ProjectDep, member_id: str, body: MemberUpdate, db: D
 
 @router.delete("/{member_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[require(Permission.ADMIN)])
 def remove_member(project: ProjectDep, member_id: str, db: DbDep) -> Response:
-    """멤버 제거. 그 사람이 작업자로 지정된 일감은 '미지정'으로 바뀐다."""
+    """멤버 제거. 그 사람이 작업자/문서 담당자인 일감·위키는 '미지정'으로 바뀐다."""
     m = _get_member(db, project, member_id)
     db.project_members.delete(m.id)
     user = _user_by_email(db, m.email)
     if user:
         for t in db.tasks.list(lambda t: t.project_id == project.id and t.assignee_id == user.id):
             db.tasks.update(t.model_copy(update={"assignee_id": None, "updated_at": utcnow()}))
+        for p in db.wiki_pages.list(lambda p: p.project_id == project.id and p.owner_id == user.id):
+            db.wiki_pages.update(p.model_copy(update={"owner_id": None}))
     return Response(status_code=status.HTTP_204_NO_CONTENT)

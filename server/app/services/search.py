@@ -67,6 +67,8 @@ def search(db: Database, project: Project, query: str, limit: int = 30) -> list[
 
     for p in db.wiki_pages.list(lambda p: p.project_id == project.id):
         score = 10.0 if q in p.title.casefold() else 8.0 if any(q in a.casefold() for a in p.aliases) else 0.0
+        if any(q in t.casefold() for t in p.tags):
+            score += 5
         count = p.content.casefold().count(q)
         score += min(count, 5) + (2 if count else 0)
         if score:

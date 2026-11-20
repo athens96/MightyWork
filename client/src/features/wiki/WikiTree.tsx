@@ -17,7 +17,7 @@ export function WikiTree({ pages, basePath, parentId = null }: Props) {
     <ul className="tree">
       {children.map((page) => (
         <li key={page.id}>
-          <NavLink to={`${basePath}/${page.id}`} title={page.title}>
+          <NavLink to={`${basePath}/${page.id}`} title={page.title} className={page.status === "deprecated" ? "is-deprecated" : undefined}>
             <DocIcon size={13} />
             <span>{page.title}</span>
           </NavLink>

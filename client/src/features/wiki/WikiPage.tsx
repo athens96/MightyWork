@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
-import { wikiApi } from "../../api";
+import { membersApi, wikiApi } from "../../api";
 import { ApiError } from "../../api/http";
-import type { PageLinks, UnlinkedMention, WikiPage as WikiPageType, WikiPageSummary } from "../../types";
+import type { PageLinks, UnlinkedMention, User, WikiPage as WikiPageType, WikiPageSummary } from "../../types";
+import { PropertiesBar, PropertiesEditor } from "./pageProps";
+import { WikiIndex } from "./WikiIndex";
 import { useCurrentProject } from "../projects/ProjectLayout";
 import { ChevronIcon, EditIcon, PlusIcon, TrashIcon } from "../../components/icons";
 import { Markdown } from "../../components/Markdown";
@@ -24,7 +26,8 @@ export function WikiPage() {
   const [pages, setPages] = useState<WikiPageSummary[]>([]);
   const [page, setPage] = useState<WikiPageType | null>(null);
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState({ title: "", content: "", aliases: [] as string[] });
+  const [draft, setDraft] = useState<Draft>(toDraft(null));
+  const [members, setMembers] = useState<User[]>([]);
   const [aliasDraft, setAliasDraft] = useState("");
   const [mentions, setMentions] = useState<UnlinkedMention[]>([]);
   const [links, setLinks] = useState<PageLinks | null>(null);
@@ -33,7 +36,8 @@ export function WikiPage() {
 
   useEffect(() => {
     reloadTree();
-  }, [reloadTree]);
+    membersApi.list(project.id).then((m) => setMembers(m.flatMap((x) => (x.user ? [x.user] : []))), () => {});
+  }, [reloadTree, project.id]);
 
   // 새 페이지 생성 직후에는 navigate state 로 편집 모드 진입
   const openInEditMode = (location.state as { edit?: boolean } | null)?.edit === true;
@@ -47,7 +51,7 @@ export function WikiPage() {
         if (cancelled) return;
         setPage(p);
         if (openInEditMode) {
-          setDraft({ title: p.title, content: p.content, aliases: p.aliases });
+          setDraft(toDraft(p));
           setEditing(true);
         }
       },
@@ -115,7 +119,7 @@ export function WikiPage() {
 
   const startEdit = () => {
     if (!page) return;
-    setDraft({ title: page.title, content: page.content, aliases: page.aliases });
+    setDraft(toDraft(page));
     setEditing(true);
   };
 
@@ -144,6 +148,9 @@ export function WikiPage() {
       <aside className="pane wiki-nav">
         <div className="pane-header">
           <span className="pane-title">페이지 {pages.length}</span>
+          <Link to={basePath} className="btn btn-sm btn-ghost" title="문서 목록 (속성으로 거르기)">
+            목록
+          </Link>
           {canCreate && (
             <button className="icon-btn" onClick={() => createPage(null)} title="새 페이지">
               <PlusIcon size={12} />
@@ -160,7 +167,8 @@ export function WikiPage() {
       </aside>
 
       <article className="pane wiki-body">
-        {!page && <div className="empty">왼쪽에서 페이지를 선택하거나 새로 만드세요.</div>}
+        {!pageId && <WikiIndex pages={pages} users={members} basePath={basePath} />}
+        {pageId && !page && <div className="empty">불러오는 중…</div>}
 
         {page && !editing && (
           <>
@@ -205,6 +213,7 @@ export function WikiPage() {
                   </span>
                 )}
               </p>
+              <PropertiesBar page={page} users={members} basePath={basePath} />
               {page.content ? (
                 <Markdown links={resolver}>{page.content}</Markdown>
               ) : (
@@ -257,6 +266,7 @@ export function WikiPage() {
                 placeholder="다른 이름 (예: SSO) 입력 후 Enter"
               />
             </div>
+            <PropertiesEditor value={draft} onChange={(v) => setDraft({ ...draft, ...v })} members={members} />
             <div className="editor-split">
               <textarea
                 value={draft.content}
@@ -400,4 +410,18 @@ function highlightNames(text: string, names: string[]) {
   const alts = names.filter((n) => n.trim().length >= 2).sort((a, b) => b.length - a.length).map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
   if (!alts.length) return text;
   return text.split(new RegExp(`(${alts.join("|")})`, "gi")).map((part, i) => (i % 2 ? <mark key={i}>{part}</mark> : part));
+}
+
+type Draft = Pick<WikiPageType, "title" | "content" | "aliases" | "page_type" | "status" | "owner_id" | "tags">;
+
+function toDraft(p: WikiPageType | null): Draft {
+  return {
+    title: p?.title ?? "",
+    content: p?.content ?? "",
+    aliases: p?.aliases ?? [],
+    page_type: p?.page_type ?? null,
+    status: p?.status ?? null,
+    owner_id: p?.owner_id ?? null,
+    tags: p?.tags ?? [],
+  };
 }

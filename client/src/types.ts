@@ -88,6 +88,10 @@ export interface WikiPage {
   content: string;
   parent_id: string | null;
   aliases: string[]; // 별칭(동의어)
+  page_type: PageType | null; // Properties
+  status: PageStatus | null;
+  owner_id: string | null; // 문서 담당자
+  tags: string[];
   project_id: string;
   created_by: string;
   updated_by: string;
@@ -100,11 +104,18 @@ export interface WikiPageSummary {
   title: string;
   parent_id: string | null;
   aliases: string[];
+  page_type: PageType | null;
+  status: PageStatus | null;
+  owner_id: string | null;
+  tags: string[];
   updated_at: string;
 }
 
 export type WikiPageCreate = Pick<WikiPage, "title"> & Partial<Pick<WikiPage, "content" | "parent_id">>;
-export type WikiPageUpdate = Partial<Pick<WikiPage, "title" | "content" | "parent_id" | "aliases">>;
+export type WikiPageUpdate = Partial<Pick<WikiPage, "title" | "content" | "parent_id" | "aliases" | "page_type" | "status" | "owner_id" | "tags">>;
+
+export type PageType = "guide" | "spec" | "decision" | "meeting" | "reference" | "note";
+export type PageStatus = "draft" | "review" | "published" | "deprecated";
 
 export interface TaskRef {
   id: string;
