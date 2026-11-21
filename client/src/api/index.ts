@@ -29,6 +29,7 @@ import type {
   QAResponse,
   RelationKind,
   ReviewStatus,
+  SavedView,
   SearchHit,
   Task,
   TaskActivity,
@@ -107,6 +108,13 @@ export const notificationsApi = {
 
 export const pipelineApi = {
   get: () => http.get<PipelineStageInfo[]>("/pipeline"),
+};
+
+export const viewsApi = {
+  list: (projectId: string) => http.get<SavedView[]>(`/projects/${projectId}/views`),
+  create: (projectId: string, body: { name: string; layout: SavedView["layout"]; filters: Record<string, string> }) =>
+    http.post<SavedView>(`/projects/${projectId}/views`, body),
+  remove: (projectId: string, id: string) => http.delete(`/projects/${projectId}/views/${id}`),
 };
 
 export const tasksApi = {

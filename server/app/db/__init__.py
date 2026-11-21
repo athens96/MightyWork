@@ -16,6 +16,7 @@ from app.models.oauth import OAuthClient, OAuthGrant, RefreshToken
 from app.models.project import Project
 from app.models.task import Task, TaskLink
 from app.models.user import User
+from app.models.view import SavedView
 from app.models.wiki import WikiPage, WikiRevision
 
 logger = logging.getLogger("mightywork.db")
@@ -26,6 +27,7 @@ _COLLECTIONS = (
     ("project_members", "project_members.json", ProjectMember),
     ("tasks", "tasks.json", Task),
     ("task_links", "task_links.json", TaskLink),
+    ("saved_views", "saved_views.json", SavedView),
     ("comments", "comments.json", Comment),
     ("task_activities", "task_activities.json", TaskActivity),
     ("wiki_pages", "wiki_pages.json", WikiPage),
@@ -59,6 +61,7 @@ class Database:
         refresh_tokens: Repository[RefreshToken],
         attachments: Repository[Attachment] | None = None,
         task_links: Repository[TaskLink] | None = None,
+        saved_views: Repository[SavedView] | None = None,
         wiki_revisions: Repository[WikiRevision] | None = None,
         notifications: Repository[Notification] | None = None,
         audit_logs: Repository[AuditLog] | None = None,
@@ -75,6 +78,7 @@ class Database:
         self.project_members = project_members
         self.tasks = tasks
         self.task_links = task_links or JsonFileRepository(base / "task_links.json", TaskLink)
+        self.saved_views = saved_views or JsonFileRepository(base / "saved_views.json", SavedView)
         self.comments = comments
         self.task_activities = task_activities
         self.wiki_pages = wiki_pages

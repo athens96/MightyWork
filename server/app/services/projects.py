@@ -20,6 +20,7 @@ def delete_project_cascade(db: Database, project_id: str) -> bool:
         for repo in (
             db.tasks,
             db.task_links,
+            db.saved_views,
             db.comments,
             db.task_activities,
             db.project_members,

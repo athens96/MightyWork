@@ -906,3 +906,30 @@ mark { background: color-mix(in srgb, var(--wait) 35%, transparent); color: inhe
 .qa-result { display: flex; flex-direction: column; gap: 12px; }
 .qa-answer { padding: 16px; display: flex; flex-direction: column; gap: 10px; }
 .qa-terms { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; font-size: 11.5px; }
+
+/* MW-1: 다중 필터, 저장된 뷰, 리스트 뷰, 타임라인(간트) */
+.filter-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 10px; }
+.saved-views-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 10px; }
+.list-view-card { overflow-x: auto; }
+.list-tags { display: inline-flex; flex-wrap: wrap; gap: 4px; margin-left: 8px; vertical-align: middle; }
+.inline-stage-select { height: 24px; padding: 0 6px; font-size: 11.5px; border-radius: 6px; border: 1px solid var(--line); background: var(--card-raised); color: var(--ink); }
+.timeline-wrap { display: flex; flex-direction: column; gap: 12px; }
+.gantt-card { overflow-x: auto; }
+.gantt-head, .gantt-row { display: grid; grid-template-columns: 260px minmax(520px, 1fr); border-bottom: 1px solid var(--line); align-items: center; }
+.gantt-head { background: var(--card-raised); font-size: 11.5px; font-weight: 700; color: var(--ink3); height: 34px; }
+.gantt-row { min-height: 38px; font-size: 12.5px; }
+.gantt-row:last-child { border-bottom: none; }
+.gantt-label-col { padding: 6px 10px; display: flex; align-items: center; justify-content: space-between; gap: 6px; border-right: 1px solid var(--line); min-width: 0; }
+.gantt-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); font-weight: 500; }
+.gantt-title:hover { color: var(--accent); }
+.gantt-nudge { display: inline-flex; gap: 2px; flex-shrink: 0; }
+.gantt-track-col { position: relative; height: 100%; min-height: 36px; }
+.gantt-scale span { position: absolute; top: 9px; transform: translateX(-50%); font-size: 10.5px; color: var(--ink3); white-space: nowrap; }
+.gantt-today { position: absolute; top: 0; bottom: 0; width: 1.5px; background: var(--err); opacity: 0.55; pointer-events: none; }
+.gantt-bar { position: absolute; top: 7px; height: 22px; border-radius: 6px; background: var(--run); color: #fff; font-size: 11px; font-weight: 600; display: flex; align-items: center; padding: 0 7px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; box-shadow: var(--shadow-chip); }
+.gantt-bar.tone-done { background: var(--done); }
+.gantt-bar.tone-wait { background: var(--wait); color: var(--on-wait); }
+.gantt-bar.tone-agent { background: var(--agent); }
+.gantt-bar.tone-task { background: var(--task); }
+.gantt-bar.tone-stop { background: var(--stop); }
+.unscheduled-card { padding: 12px; display: flex; flex-direction: column; gap: 8px; }

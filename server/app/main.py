@@ -22,6 +22,7 @@ from app.api.routes import (
     projects,
     tasks,
     users,
+    views,
     wiki,
 )
 from app.core.config import Settings
@@ -88,6 +89,7 @@ def create_app(settings: Settings | None = None, db: Database | None = None) -> 
     api.include_router(members.router)
     api.include_router(tasks.pipeline_router)
     api.include_router(tasks.router)
+    api.include_router(views.router)
     api.include_router(comments.router)
     api.include_router(wiki.router)
     api.include_router(attachments.router)

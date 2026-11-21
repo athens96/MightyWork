@@ -48,6 +48,16 @@ export type ProjectUpdate = Partial<Pick<Project, "name" | "description">>;
 export type PipelineStage = "backlog" | "todo" | "in_progress" | "review" | "qa" | "done";
 export type Priority = "low" | "medium" | "high" | "urgent";
 
+export interface SavedView {
+  id: string;
+  project_id: string;
+  name: string;
+  layout: "board" | "list" | "timeline";
+  filters: Record<string, string>;
+  created_by: string;
+  created_at: string;
+}
+
 export interface PipelineStageInfo {
   key: PipelineStage;
   label: string;
