@@ -24,6 +24,7 @@ export const FIELD_LABEL: Record<string, string> = {
   stage: "상태",
   priority: "우선순위",
   parent_id: "상위 일감",
+  cycle_id: "사이클",
   assignee_id: "작업자",
   start_date: "시작일",
   due_date: "종료일",

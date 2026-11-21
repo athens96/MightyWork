@@ -13,6 +13,7 @@ import { MembersPage } from "./features/projects/MembersPage";
 import { SearchPage } from "./features/projects/SearchPage";
 import { TaskBoardPage, TaskDetailRoute } from "./features/tasks/TaskBoardPage";
 import { MyTasksPage } from "./features/tasks/MyTasksPage";
+import { CyclesPage } from "./features/planning/CyclesPage";
 
 // 위키·지식 베이스(마크다운 렌더러 + 그래프)는 진입 시에만 로드
 const WikiPage = lazy(() => import("./features/wiki/WikiPage").then((m) => ({ default: m.WikiPage })));
@@ -52,6 +53,7 @@ export default function App() {
             <Route path="tasks" element={<TaskBoardPage />}>
               <Route path=":taskId" element={<TaskDetailRoute />} />
             </Route>
+            <Route path="cycles" element={<CyclesPage />} />
             <Route path="wiki" element={wikiElement} />
             <Route path="knowledge" element={knowledgeElement} />
             <Route path="members" element={<MembersPage />} />

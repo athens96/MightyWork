@@ -80,6 +80,7 @@ class TaskBase(BaseModel):
     stage: PipelineStage = PipelineStage.BACKLOG
     priority: Priority = Priority.MEDIUM
     parent_id: str | None = None  # 상위 일감 (하위 일감 트리)
+    cycle_id: str | None = None  # 소속 사이클(스프린트)
     assignee_id: str | None = None  # 작업자
     tags: list[str] = []  # 레이블
     start_date: date | None = None  # 시작일
@@ -120,6 +121,7 @@ class TaskUpdate(BaseModel):
     stage: PipelineStage | None = None
     priority: Priority | None = None
     parent_id: str | None = None
+    cycle_id: str | None = None
     assignee_id: str | None = None
     tags: list[str] | None = None
     start_date: date | None = None

@@ -7,7 +7,7 @@ import { subscribeSSE } from "../lib/sse";
 import { useTheme } from "../theme";
 import { CommandPalette } from "./CommandPalette";
 import { QuickCreateModal, ShortcutsModal } from "./QuickCreateModal";
-import { BellIcon, BoardIcon, CheckSquareIcon, DocIcon, FolderIcon, GraphIcon, GridIcon, LogoutIcon, MoonIcon, PlugIcon, PlusIcon, SearchIcon, SunIcon } from "./icons";
+import { BellIcon, BoardIcon, CalendarIcon, CheckSquareIcon, DocIcon, FolderIcon, GraphIcon, GridIcon, LogoutIcon, MoonIcon, PlugIcon, PlusIcon, SearchIcon, SunIcon } from "./icons";
 
 export const OPEN_COMMAND_EVENT = "mightywork:open-command";
 
@@ -114,6 +114,9 @@ export function Layout() {
                 <>
                   <NavLink to={`/projects/${p.id}/tasks`} className="side-sub">
                     <BoardIcon size={13} /> 일감
+                  </NavLink>
+                  <NavLink to={`/projects/${p.id}/cycles`} className="side-sub">
+                    <CalendarIcon size={13} /> 사이클
                   </NavLink>
                   <NavLink to={`/projects/${p.id}/wiki`} className="side-sub">
                     <DocIcon size={13} /> 위키

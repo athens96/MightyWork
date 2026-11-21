@@ -114,6 +114,14 @@ def _ensure_assignee_is_member(db: Database, project: Project, assignee_id: str 
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Assignee must be a project member")
 
 
+def _validate_cycle(db: Database, project: Project, cycle_id: str | None) -> None:
+    if cycle_id is None:
+        return
+    cycle = db.cycles.get(cycle_id)
+    if cycle is None or cycle.project_id != project.id:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Cycle not found")
+
+
 def _validate_parent(db: Database, project: Project, task_id: str | None, parent_id: str | None) -> None:
     """상위 일감이 같은 프로젝트에 존재하는지, 순환이 생기지 않는지 확인."""
     current = parent_id
@@ -147,6 +155,7 @@ def list_tasks(
     stage: PipelineStage | None = None,
     assignee_id: str | None = None,
     parent_id: str | None = None,
+    cycle_id: str | None = None,
 ) -> list[TaskRead]:
     all_project_tasks = db.tasks.list(lambda t: t.project_id == project.id)
     sub_counts: dict[str, list[int]] = {}
@@ -162,6 +171,7 @@ def list_tasks(
         if (stage is None or t.stage == stage)
         and (assignee_id is None or t.assignee_id == assignee_id)
         and (parent_id is None or t.parent_id == parent_id)
+        and (cycle_id is None or t.cycle_id == cycle_id)
     ]
     counts: dict[str, int] = {}
     for c in db.comments.list(lambda c: c.project_id == project.id):
@@ -176,6 +186,7 @@ def list_tasks(
 def create_task(project: ProjectDep, body: TaskCreate, user: CurrentUser, db: DbDep) -> TaskRead:
     _ensure_assignee_is_member(db, project, body.assignee_id)
     _validate_parent(db, project, None, body.parent_id)
+    _validate_cycle(db, project, body.cycle_id)
     number = allocate_task_number(db, project.id)
     task = db.tasks.create(Task(**body.model_dump(), project_id=project.id, number=number, created_by=user.id))
     record_created(db, task, user.id)
@@ -223,6 +234,8 @@ def update_task(project: ProjectDep, task: TaskDep, body: TaskUpdate, user: Curr
         _ensure_assignee_is_member(db, project, body.assignee_id)
     if "parent_id" in body.model_fields_set:
         _validate_parent(db, project, task.id, body.parent_id)
+    if "cycle_id" in body.model_fields_set:
+        _validate_cycle(db, project, body.cycle_id)
     updated = apply_patch(task, body)
     db.tasks.update(updated)
     record_changes(db, task, updated, user.id)

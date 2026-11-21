@@ -12,6 +12,7 @@ from app.api.routes import (
     attachments,
     auth,
     comments,
+    cycles,
     events,
     export,
     github,
@@ -92,6 +93,7 @@ def create_app(settings: Settings | None = None, db: Database | None = None) -> 
     api.include_router(tasks.pipeline_router)
     api.include_router(tasks.router)
     api.include_router(views.router)
+    api.include_router(cycles.router)
     api.include_router(comments.router)
     api.include_router(wiki.router)
     api.include_router(attachments.router)

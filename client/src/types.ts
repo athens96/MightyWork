@@ -58,6 +58,51 @@ export interface SavedView {
   created_at: string;
 }
 
+export type CycleStatus = "upcoming" | "active" | "completed";
+
+export interface CycleBurndownPoint {
+  day: string;
+  ideal: number;
+  remaining: number | null;
+}
+
+export interface Cycle {
+  id: string;
+  project_id: string;
+  name: string;
+  goal: string;
+  start_date: string;
+  end_date: string;
+  target_points: number | null;
+  status: CycleStatus;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+  total_tasks: number;
+  done_tasks: number;
+  total_points: number;
+  done_points: number;
+  completion_pct: number;
+  burndown: CycleBurndownPoint[];
+}
+
+export interface CycleCreate {
+  name: string;
+  goal?: string;
+  start_date: string;
+  end_date: string;
+  target_points?: number | null;
+  status?: CycleStatus;
+}
+
+export type CycleUpdate = Partial<CycleCreate>;
+
+export interface CycleCompleteResult {
+  completed: Cycle;
+  next_cycle: Cycle | null;
+  rolled_over_count: number;
+}
+
 export interface PipelineStageInfo {
   key: PipelineStage;
   label: string;
@@ -89,6 +134,7 @@ export interface Task {
   stage: PipelineStage;
   priority: Priority;
   parent_id: string | null;
+  cycle_id: string | null;
   assignee_id: string | null; // 작업자
   tags: string[]; // 레이블
   start_date: string | null; // YYYY-MM-DD
@@ -220,7 +266,7 @@ export interface Comment {
   updated_at: string;
 }
 
-export type TrackedField = "title" | "stage" | "priority" | "assignee_id" | "start_date" | "due_date" | "estimate" | "tags";
+export type TrackedField = "title" | "stage" | "priority" | "parent_id" | "cycle_id" | "assignee_id" | "start_date" | "due_date" | "estimate" | "tags";
 
 export interface TaskActivity {
   id: string;

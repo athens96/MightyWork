@@ -1,13 +1,13 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type DragEvent, type FormEvent } from "react";
 import { Outlet, useMatch, useNavigate, useSearchParams } from "react-router-dom";
-import { membersApi, pipelineApi, tasksApi, usersApi, viewsApi } from "../../api";
+import { cyclesApi, membersApi, pipelineApi, tasksApi, usersApi, viewsApi } from "../../api";
 import { can as canDo } from "../../lib/permissions";
 import { useAuth } from "../../auth/AuthContext";
 import { PlusIcon } from "../../components/icons";
 import { TASK_CREATED_EVENT } from "../../components/QuickCreateModal";
 import { PROJECT_EVENT, subscribeSSE, type ProjectEventDetail, type SSEStatus } from "../../lib/sse";
 import { dueState } from "../../lib/time";
-import type { Permission, PipelineStage, PipelineStageInfo, Priority, SavedView, Task, TaskUpdate, User } from "../../types";
+import type { Cycle, Permission, PipelineStage, PipelineStageInfo, Priority, SavedView, Task, TaskUpdate, User } from "../../types";
 import { useCurrentProject } from "../projects/ProjectLayout";
 import type { BoardContext } from "./boardContext";
 import { TaskCard } from "./TaskCard";
@@ -42,6 +42,7 @@ export function TaskBoardPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [members, setMembers] = useState<User[]>([]);
   const [savedViews, setSavedViews] = useState<SavedView[]>([]);
+  const [cycles, setCycles] = useState<Cycle[]>([]);
   const [newTitle, setNewTitle] = useState("");
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dropStage, setDropStage] = useState<PipelineStage | null>(null);
@@ -52,6 +53,7 @@ export function TaskBoardPage() {
   const priority = params.get("priority") || "";
   const tag = params.get("tag") || "";
   const dueFilter = params.get("due") || "";
+  const cycleFilter = params.get("cycle") || "";
   const sort = (params.get("sort") as SortKey) || "number";
 
   const setParam = (key: string, val: string) => {
@@ -65,18 +67,20 @@ export function TaskBoardPage() {
   };
 
   const reload = useCallback(async () => {
-    const [p, t, u, m, v] = await Promise.all([
+    const [p, t, u, m, v, c] = await Promise.all([
       pipelineApi.get(),
       tasksApi.list(project.id),
       usersApi.listByProject(project.id),
       membersApi.list(project.id),
       viewsApi.list(project.id).catch(() => [] as SavedView[]),
+      cyclesApi.list(project.id).catch(() => [] as Cycle[]),
     ]);
     setStages(p);
     setTasks(t);
     setUsers(u);
     setMembers(m.flatMap((x) => (x.user ? [x.user] : [])));
     setSavedViews(v);
+    setCycles(c);
   }, [project.id]);
 
   useEffect(() => {
@@ -149,6 +153,8 @@ export function TaskBoardPage() {
         if (dueFilter === "soon" && st !== "soon" && st !== "overdue") return false;
         if (dueFilter === "has_due" && !t.due_date) return false;
       }
+      if (cycleFilter === "none" && t.cycle_id) return false;
+      if (cycleFilter && cycleFilter !== "none" && t.cycle_id !== cycleFilter) return false;
       return true;
     });
     return [...filtered].sort((a, b) => {
@@ -162,14 +168,14 @@ export function TaskBoardPage() {
       }
       return a.number - b.number;
     });
-  }, [tasks, assignee, priority, tag, dueFilter, sort, me?.id]);
+  }, [tasks, assignee, priority, tag, dueFilter, cycleFilter, sort, me?.id]);
 
   const count = (...s: PipelineStage[]) => visible.filter((t) => s.includes(t.stage)).length;
-  const hasFilters = assignee !== "all" || !!priority || !!tag || !!dueFilter || sort !== "number";
+  const hasFilters = assignee !== "all" || !!priority || !!tag || !!dueFilter || !!cycleFilter || sort !== "number";
 
   const can = (perm: Permission) => canDo(project, perm);
   const canEdit = can("edit");
-  const context: BoardContext = { project, tasks, stages, users, members, can, onCreated, onChanged, onDeleted };
+  const context: BoardContext = { project, tasks, stages, cycles, users, members, can, onCreated, onChanged, onDeleted };
 
   const patchTask = async (taskId: string, body: TaskUpdate) => {
     const current = tasks.find((t) => t.id === taskId);
@@ -205,6 +211,7 @@ export function TaskBoardPage() {
     if (priority) filters.priority = priority;
     if (tag) filters.tag = tag;
     if (dueFilter) filters.due = dueFilter;
+    if (cycleFilter) filters.cycle = cycleFilter;
     if (sort !== "number") filters.sort = sort;
     const created = await viewsApi.create(project.id, { name: name.trim(), layout, filters });
     setSavedViews((prev) => [...prev, created]);
@@ -314,6 +321,18 @@ export function TaskBoardPage() {
             {allTags.map((t) => (
               <option key={t} value={t}>
                 #{t}
+              </option>
+            ))}
+          </select>
+        )}
+        {cycles.length > 0 && (
+          <select className="filter-select" value={cycleFilter} onChange={(e) => setParam("cycle", e.target.value)} aria-label="사이클 필터">
+            <option value="">모든 사이클</option>
+            <option value="none">사이클 미지정</option>
+            {cycles.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.status === "active" ? "● " : ""}
+                {c.name}
               </option>
             ))}
           </select>

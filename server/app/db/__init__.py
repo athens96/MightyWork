@@ -9,6 +9,7 @@ from app.models.activity import TaskActivity
 from app.models.attachment import Attachment
 from app.models.audit import AuditLog
 from app.models.comment import Comment
+from app.models.cycle import Cycle
 from app.models.integration import GitHubIntegration, GitHubLink
 from app.models.knowledge import GlossaryTerm, KnowledgeEntity, KnowledgeRelation
 from app.models.member import ProjectMember
@@ -29,6 +30,7 @@ _COLLECTIONS = (
     ("tasks", "tasks.json", Task),
     ("task_links", "task_links.json", TaskLink),
     ("saved_views", "saved_views.json", SavedView),
+    ("cycles", "cycles.json", Cycle),
     ("comments", "comments.json", Comment),
     ("task_activities", "task_activities.json", TaskActivity),
     ("wiki_pages", "wiki_pages.json", WikiPage),
@@ -65,6 +67,7 @@ class Database:
         attachments: Repository[Attachment] | None = None,
         task_links: Repository[TaskLink] | None = None,
         saved_views: Repository[SavedView] | None = None,
+        cycles: Repository[Cycle] | None = None,
         wiki_revisions: Repository[WikiRevision] | None = None,
         notifications: Repository[Notification] | None = None,
         audit_logs: Repository[AuditLog] | None = None,
@@ -84,6 +87,7 @@ class Database:
         self.tasks = tasks
         self.task_links = task_links or JsonFileRepository(base / "task_links.json", TaskLink)
         self.saved_views = saved_views or JsonFileRepository(base / "saved_views.json", SavedView)
+        self.cycles = cycles or JsonFileRepository(base / "cycles.json", Cycle)
         self.comments = comments
         self.task_activities = task_activities
         self.wiki_pages = wiki_pages

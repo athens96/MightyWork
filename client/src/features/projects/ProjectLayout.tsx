@@ -2,7 +2,7 @@ import { useState, type FormEvent } from "react";
 import { NavLink, Outlet, useNavigate, useOutletContext, useParams, useSearchParams } from "react-router-dom";
 import { projectsApi } from "../../api";
 import { OPEN_COMMAND_EVENT } from "../../components/Layout";
-import { BoardIcon, DocIcon, GraphIcon, SearchIcon, TrashIcon, UsersIcon } from "../../components/icons";
+import { BoardIcon, CalendarIcon, DocIcon, GraphIcon, SearchIcon, TrashIcon, UsersIcon } from "../../components/icons";
 import { roleLabel } from "../../lib/permissions";
 import type { Project } from "../../types";
 import { useProjects } from "./ProjectsContext";
@@ -54,6 +54,9 @@ export function ProjectLayout() {
         <nav className="segment">
           <NavLink to="tasks">
             <BoardIcon size={12} /> 일감
+          </NavLink>
+          <NavLink to="cycles">
+            <CalendarIcon size={12} /> 사이클
           </NavLink>
           <NavLink to="wiki">
             <DocIcon size={12} /> 위키

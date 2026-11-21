@@ -6,6 +6,10 @@ import type {
   AuditLog,
   Comment,
   ConsentRequest,
+  Cycle,
+  CycleCompleteResult,
+  CycleCreate,
+  CycleUpdate,
   EntityKind,
   ExtractResult,
   GitHubConfig,
@@ -118,6 +122,15 @@ export const viewsApi = {
   create: (projectId: string, body: { name: string; layout: SavedView["layout"]; filters: Record<string, string> }) =>
     http.post<SavedView>(`/projects/${projectId}/views`, body),
   remove: (projectId: string, id: string) => http.delete(`/projects/${projectId}/views/${id}`),
+};
+
+export const cyclesApi = {
+  list: (projectId: string) => http.get<Cycle[]>(`/projects/${projectId}/cycles`),
+  create: (projectId: string, body: CycleCreate) => http.post<Cycle>(`/projects/${projectId}/cycles`, body),
+  update: (projectId: string, id: string, body: CycleUpdate) => http.patch<Cycle>(`/projects/${projectId}/cycles/${id}`, body),
+  remove: (projectId: string, id: string) => http.delete(`/projects/${projectId}/cycles/${id}`),
+  complete: (projectId: string, id: string, body: { rollover?: boolean; next_cycle_id?: string | null } = {}) =>
+    http.post<CycleCompleteResult>(`/projects/${projectId}/cycles/${id}/complete`, body),
 };
 
 export const tasksApi = {
