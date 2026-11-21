@@ -158,10 +158,18 @@ async def test_oauth_flow_and_tools(server):
         missing = await call(client, "get_task", {"project": "NOPE", "task": "1"})
         assert missing.is_error and "접근 권한" in text(missing)
 
-    # 웹 앱에서도 같은 데이터가 보이고, '연결된 앱'에 등록됨
+    # 웹 앱에서도 같은 데이터가 보이고, '연결된 앱'에 등록되며 MCP 출처(via_client)가 남음 (MW-13)
     with httpx2.Client(base_url=server, headers={"Authorization": f"Bearer {alice}"}) as api:
         pid = api.get("/api/projects").json()[0]["id"]
-        assert api.get(f"/api/projects/{pid}/tasks").json()[0]["title"] == "MCP 로 만든 일감"
+        tasks_list = api.get(f"/api/projects/{pid}/tasks").json()
+        assert tasks_list[0]["title"] == "MCP 로 만든 일감"
+        assert tasks_list[0]["via_client"] == "E2E 에이전트"
+        t_id = tasks_list[0]["id"]
+        assert api.get(f"/api/projects/{pid}/tasks/{t_id}/comments").json()[0]["via_client"] == "E2E 에이전트"
+        assert all(a["via_client"] == "E2E 에이전트" for a in api.get(f"/api/projects/{pid}/tasks/{t_id}/activity").json())
+        pages_list = api.get(f"/api/projects/{pid}/wiki/pages").json()
+        revs = api.get(f"/api/projects/{pid}/wiki/pages/{pages_list[0]['id']}/revisions").json()
+        assert revs and all(r["via_client"] == "E2E 에이전트" for r in revs)
         assert [g["client_name"] for g in api.get("/api/oauth/grants").json()] == ["E2E 에이전트"]
 
 

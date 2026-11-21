@@ -310,10 +310,30 @@ export const webhooksApi = {
   list: (projectId: string) => http.get<ProjectWebhook[]>(`/projects/${projectId}/webhooks`),
   create: (
     projectId: string,
-    body: { name: string; url: string; preset: WebhookPreset; events: string[]; secret?: string; enabled?: boolean },
+    body: {
+      name: string;
+      url: string;
+      preset: WebhookPreset;
+      events: string[];
+      trigger_tags?: string[];
+      trigger_stages?: string[];
+      secret?: string;
+      enabled?: boolean;
+    },
   ) => http.post<ProjectWebhook>(`/projects/${projectId}/webhooks`, body),
-  update: (projectId: string, id: string, body: Partial<{ name: string; url: string; preset: WebhookPreset; events: string[]; enabled: boolean }>) =>
-    http.patch<ProjectWebhook>(`/projects/${projectId}/webhooks/${id}`, body),
+  update: (
+    projectId: string,
+    id: string,
+    body: Partial<{
+      name: string;
+      url: string;
+      preset: WebhookPreset;
+      events: string[];
+      trigger_tags: string[];
+      trigger_stages: string[];
+      enabled: boolean;
+    }>,
+  ) => http.patch<ProjectWebhook>(`/projects/${projectId}/webhooks/${id}`, body),
   remove: (projectId: string, id: string) => http.delete(`/projects/${projectId}/webhooks/${id}`),
   test: (projectId: string, id: string) => http.post<WebhookDelivery>(`/projects/${projectId}/webhooks/${id}/test`),
   deliveries: (projectId: string, id: string) => http.get<WebhookDelivery[]>(`/projects/${projectId}/webhooks/${id}/deliveries`),

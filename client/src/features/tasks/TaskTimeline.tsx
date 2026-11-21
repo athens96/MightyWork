@@ -103,6 +103,11 @@ export function TaskTimeline({ comments, activity, users, pages = [], stages, me
               <div className="bubble">
                 <div className="bubble-head">
                   <strong>{nameOf(comment.author_id)}</strong>
+                  {comment.via_client && (
+                    <span className="pill tone-agent agent-via" title={`MCP 클라이언트(${comment.via_client})를 통해 작성됨`}>
+                      via {comment.via_client}
+                    </span>
+                  )}
                   <span className="muted">
                     {timeAgo(comment.created_at)}
                     {Date.parse(comment.updated_at) - Date.parse(comment.created_at) > 1000 && " · 수정됨"}
@@ -157,7 +162,12 @@ export function TaskTimeline({ comments, activity, users, pages = [], stages, me
               <li key={act.id} className="tl-event">
                 <span className="tl-dot" />
                 <span>
-                  <strong>{nameOf(act.actor_id)}</strong>{" "}
+                  <strong>{nameOf(act.actor_id)}</strong>
+                  {act.via_client && (
+                    <span className="pill tone-agent agent-via" style={{ marginLeft: 5 }} title={`MCP 클라이언트(${act.via_client})를 통해 실행됨`}>
+                      via {act.via_client}
+                    </span>
+                  )}{" "}
                   {act.kind === "created" ? (
                     "일감을 만들었습니다"
                   ) : (

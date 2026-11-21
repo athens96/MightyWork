@@ -1311,3 +1311,11 @@ mark { background: color-mix(in srgb, var(--wait) 35%, transparent); color: inhe
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* MW-13: MCP AI 에이전트 출처 배지 */
+.agent-via {
+  font-size: 10.5px;
+  padding: 1px 6px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}

@@ -225,6 +225,7 @@ export interface Task {
   subtask_count: number;
   subtask_done: number;
   created_by: string; // 보고자
+  via_client?: string | null; // MCP AI 에이전트 출처
   created_at: string;
   updated_at: string;
 }
@@ -342,6 +343,7 @@ export interface Comment {
   task_id: string;
   author_id: string;
   body: string; // Markdown
+  via_client?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -356,6 +358,7 @@ export interface TaskActivity {
   field: TrackedField | null;
   old: unknown;
   new: unknown;
+  via_client?: string | null;
   created_at: string;
 }
 
@@ -404,6 +407,7 @@ export interface WikiRevisionSummary {
   title: string;
   editor_id: string;
   note: string;
+  via_client?: string | null;
   created_at: string;
 }
 
@@ -572,6 +576,8 @@ export interface ProjectWebhook {
   url: string;
   preset: WebhookPreset;
   events: string[];
+  trigger_tags?: string[];
+  trigger_stages?: string[];
   has_secret: boolean;
   enabled: boolean;
   created_at: string;

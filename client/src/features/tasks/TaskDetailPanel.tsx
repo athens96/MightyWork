@@ -232,6 +232,11 @@ export function TaskDetailPanel() {
       <section className="sheet" role="dialog" aria-modal="true" aria-label={taskKey || "일감"}>
         <header className="sheet-head">
           <span className="key-badge">{taskKey || "…"}</span>
+          {task?.via_client && (
+            <span className="pill tone-agent agent-via" title={`MCP 클라이언트(${task.via_client})를 통해 생성됨`}>
+              via {task.via_client}
+            </span>
+          )}
           <span className="sheet-title">{task?.title}</span>
           {task && (
             <button

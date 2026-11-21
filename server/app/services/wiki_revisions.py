@@ -14,7 +14,9 @@ def list_revisions(db: Database, page_id: str) -> list[WikiRevision]:
     )
 
 
-def record_revision(db: Database, page: WikiPage, editor_id: str, note: str = "") -> WikiRevision:
+def record_revision(
+    db: Database, page: WikiPage, editor_id: str, note: str = "", *, via_client: str | None = None
+) -> WikiRevision:
     existing = db.wiki_revisions.list(lambda r: r.page_id == page.id)
     next_ver = max((r.version for r in existing), default=0) + 1
     return db.wiki_revisions.create(
@@ -30,6 +32,7 @@ def record_revision(db: Database, page: WikiPage, editor_id: str, note: str = ""
             tags=list(page.tags),
             editor_id=editor_id,
             note=note,
+            via_client=via_client,
         )
     )
 

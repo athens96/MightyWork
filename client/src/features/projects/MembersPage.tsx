@@ -24,6 +24,7 @@ import { useProjects } from "./ProjectsContext";
 const WEBHOOK_EVENT_LABELS: [string, string][] = [
   ["task.created", "일감 생성"],
   ["task.stage_changed", "단계 이동"],
+  ["task.updated", "일감 변경(레이블/단계)"],
   ["comment.created", "덧글"],
   ["mention", "@멘션"],
   ["due_soon", "마감 임박"],
@@ -60,6 +61,8 @@ export function MembersPage() {
   const [whUrl, setWhUrl] = useState("");
   const [whPreset, setWhPreset] = useState<WebhookPreset>("slack");
   const [whEvents, setWhEvents] = useState<string[]>(["task.created", "task.stage_changed", "comment.created", "mention", "due_soon"]);
+  const [whTriggerTags, setWhTriggerTags] = useState("");
+  const [whTriggerStages, setWhTriggerStages] = useState("");
   const [whLogsId, setWhLogsId] = useState<string | null>(null);
   const [whLogs, setWhLogs] = useState<WebhookDelivery[]>([]);
   const [tab, setTab] = useState<"members" | "integrations" | "audit">("members");
@@ -103,10 +106,20 @@ export function MembersPage() {
         url: whUrl.trim(),
         preset: whPreset,
         events: whEvents,
+        trigger_tags: whTriggerTags
+          .split(",")
+          .map((t) => t.trim())
+          .filter(Boolean),
+        trigger_stages: whTriggerStages
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean),
       });
       setWebhooks((prev) => [...prev, created]);
       setWhName("");
       setWhUrl("");
+      setWhTriggerTags("");
+      setWhTriggerStages("");
       setNotice(
         created.generated_secret
           ? `웹훅 '${created.name}' 을 등록했습니다. 서명 Secret (1회 표시): ${created.generated_secret}`
@@ -606,6 +619,16 @@ export function MembersPage() {
                         <input type="checkbox" checked={h.enabled} onChange={() => toggleWebhook(h)} title="활성/비활성" />
                         <strong>{h.name}</strong>
                         <span className="pill tone-idle">{h.preset}</span>
+                        {(h.trigger_tags?.length ?? 0) > 0 && (
+                          <span className="pill tone-agent" title="AI 에이전트 자동화 레이블 필터">
+                            #{h.trigger_tags!.join(" #")}
+                          </span>
+                        )}
+                        {(h.trigger_stages?.length ?? 0) > 0 && (
+                          <span className="pill tone-run" title="AI 에이전트 자동화 단계 필터">
+                            단계: {h.trigger_stages!.join(",")}
+                          </span>
+                        )}
                         <code className="mono muted" style={{ fontSize: 11.5 }}>
                           {h.url}
                         </code>
@@ -661,6 +684,14 @@ export function MembersPage() {
               <label style={{ gridColumn: "1 / -1" }}>
                 <span>Webhook URL (https://)</span>
                 <input type="url" value={whUrl} onChange={(e) => setWhUrl(e.target.value)} placeholder="https://hooks.slack.com/services/..." required />
+              </label>
+              <label>
+                <span>자동화 조건 · 레이블 (선택, AI 에이전트 훅)</span>
+                <input value={whTriggerTags} onChange={(e) => setWhTriggerTags(e.target.value)} placeholder="예: ai-agent, claude (비우면 전체)" />
+              </label>
+              <label>
+                <span>자동화 조건 · 단계 (선택)</span>
+                <input value={whTriggerStages} onChange={(e) => setWhTriggerStages(e.target.value)} placeholder="예: todo, review (비우면 전체)" />
               </label>
             </div>
             <div className="row" style={{ gap: 12, flexWrap: "wrap", marginTop: 8 }}>

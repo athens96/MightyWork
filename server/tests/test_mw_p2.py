@@ -81,3 +81,45 @@ def test_mw12_milestones_crud_progress_and_filtering(auth_client, project):
 
     assert auth_client.delete(f"/api/projects/{pid}/milestones/{mid}").status_code == 204
     assert auth_client.get(f"/api/projects/{pid}/tasks/{t1['id']}").json()["milestone_id"] is None
+
+
+def test_mw13_agent_automation_hook_filters(auth_client, project):
+    from app.services.webhooks import set_webhook_sender
+
+    pid = project["id"]
+    hits: list[str] = []
+
+    def fake_sender(url: str, raw: bytes, headers: dict[str, str]) -> int:
+        hits.append(f"{headers.get('X-MightyWork-Event')}:{url}")
+        return 200
+
+    set_webhook_sender(fake_sender)
+    try:
+        # AI 에이전트 전용 자동화 훅: 레이블 'ai-agent' + 단계 'todo' 일 때만 트리거
+        hook = auth_client.post(
+            f"/api/projects/{pid}/webhooks",
+            json={
+                "name": "Claude Code 자동 실행기",
+                "url": "https://agent.example.com/trigger",
+                "preset": "custom",
+                "events": ["task.created", "task.stage_changed", "task.updated"],
+                "trigger_tags": ["ai-agent"],
+                "trigger_stages": ["todo"],
+            },
+        )
+        assert hook.status_code == 201, hook.text
+        assert hook.json()["trigger_tags"] == ["ai-agent"] and hook.json()["trigger_stages"] == ["todo"]
+
+        # 조건 미충족 일감 → 트리거되지 않음
+        t_normal = auth_client.post(f"/api/projects/{pid}/tasks", json={"title": "일반 작업", "stage": "todo"}).json()
+        assert hits == []
+
+        # 레이블만 있고 단계가 backlog → 아직 트리거되지 않음
+        auth_client.patch(f"/api/projects/{pid}/tasks/{t_normal['id']}", json={"stage": "backlog", "tags": ["ai-agent"]})
+        assert hits == []
+
+        # 단계가 todo 로 이동 + ai-agent 레이블 보유 → 자동화 훅 트리거!
+        auth_client.patch(f"/api/projects/{pid}/tasks/{t_normal['id']}", json={"stage": "todo"})
+        assert any("agent.example.com/trigger" in h for h in hits)
+    finally:
+        set_webhook_sender(None)

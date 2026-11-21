@@ -184,6 +184,24 @@ def deliver_webhook(
     return None
 
 
+def _matches_hook_filters(hook: ProjectWebhook, extra: dict[str, Any] | None) -> bool:
+    """AI 에이전트 자동화 훅용 레이블·단계 조건 필터링."""
+    if not hook.trigger_tags and not hook.trigger_stages:
+        return True
+    data = extra or {}
+    if hook.trigger_tags:
+        wanted = {t.strip().casefold() for t in hook.trigger_tags if t.strip()}
+        actual = {str(t).strip().casefold() for t in (data.get("tags") or [])}
+        if not (wanted & actual):
+            return False
+    if hook.trigger_stages:
+        wanted_stages = {s.strip().casefold() for s in hook.trigger_stages if s.strip()}
+        actual_stage = str(data.get("stage") or "").strip().casefold()
+        if actual_stage not in wanted_stages:
+            return False
+    return True
+
+
 def dispatch_project_webhooks(
     db: Database,
     project: Project,
@@ -194,8 +212,12 @@ def dispatch_project_webhooks(
     link: str = "",
     extra: dict[str, Any] | None = None,
 ) -> int:
-    """프로젝트에 등록된 활성 웹훅 중 해당 이벤트를 구독한 대상에 일괄 발송한다."""
-    hooks = db.project_webhooks.list(lambda h: h.project_id == project.id and h.enabled and event in h.events)
+    """프로젝트에 등록된 활성 웹훅 중 해당 이벤트와 레이블/단계 조건이 일치하는 대상에 발송한다."""
+    hooks = [
+        h
+        for h in db.project_webhooks.list(lambda h: h.project_id == project.id and h.enabled and event in h.events)
+        if _matches_hook_filters(h, extra)
+    ]
     for h in hooks:
         deliver_webhook(db, h, event=event, project_key=project.key, title=title, body=body, link=link, extra=extra)
     return len(hooks)

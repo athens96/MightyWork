@@ -74,6 +74,7 @@ export function WikiHistoryDrawer({ projectId, pageId, users, canEdit, onRestore
                 >
                   <div className="history-item-head">
                     <strong>v{r.version}</strong>
+                    {r.via_client && <span className="pill tone-agent agent-via">via {r.via_client}</span>}
                     <span className="muted">{timeAgo(r.created_at)}</span>
                   </div>
                   <div className="history-item-title">{r.title}</div>
@@ -94,7 +95,13 @@ export function WikiHistoryDrawer({ projectId, pageId, users, canEdit, onRestore
                       v{detail.version} · {detail.title}
                     </h3>
                     <p className="muted">
-                      {userName(detail.editor_id)} · {timeAgo(detail.created_at)}
+                      {userName(detail.editor_id)}
+                      {detail.via_client && (
+                        <span className="pill tone-agent agent-via" style={{ marginLeft: 6 }}>
+                          via {detail.via_client}
+                        </span>
+                      )}{" "}
+                      · {timeAgo(detail.created_at)}
                       {detail.note ? ` · ${detail.note}` : ""}
                     </p>
                   </div>

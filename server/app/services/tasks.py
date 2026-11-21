@@ -6,13 +6,13 @@ from app.models.task import Task
 TRACKED_FIELDS = ("title", "stage", "priority", "parent_id", "cycle_id", "milestone_id", "assignee_id", "start_date", "due_date", "estimate", "tags")
 
 
-def record_created(db: Database, task: Task, actor_id: str) -> None:
+def record_created(db: Database, task: Task, actor_id: str, *, via_client: str | None = None) -> None:
     db.task_activities.create(
-        TaskActivity(project_id=task.project_id, task_id=task.id, actor_id=actor_id, kind="created")
+        TaskActivity(project_id=task.project_id, task_id=task.id, actor_id=actor_id, kind="created", via_client=via_client)
     )
 
 
-def record_changes(db: Database, before: Task, after: Task, actor_id: str) -> None:
+def record_changes(db: Database, before: Task, after: Task, actor_id: str, *, via_client: str | None = None) -> None:
     old, new = before.model_dump(mode="json"), after.model_dump(mode="json")
     for field in TRACKED_FIELDS:
         if old[field] != new[field]:
@@ -25,6 +25,7 @@ def record_changes(db: Database, before: Task, after: Task, actor_id: str) -> No
                     field=field,
                     old=old[field],
                     new=new[field],
+                    via_client=via_client,
                 )
             )
 

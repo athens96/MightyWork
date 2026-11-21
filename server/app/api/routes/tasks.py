@@ -477,6 +477,16 @@ def update_task(project: ProjectDep, task: TaskDep, body: TaskUpdate, user: Curr
             link=f"{settings.app_url.rstrip('/')}{link}",
             extra={"task_id": updated.id, "key": key, "from": task.stage.value, "stage": updated.stage.value, "tags": updated.tags},
         )
+    if updated.tags != task.tags or updated.stage != task.stage:
+        dispatch_project_webhooks(
+            db,
+            project,
+            event="task.updated",
+            title=f"{key} '{updated.title}' 변경",
+            body=f"단계: {PIPELINE_LABELS[updated.stage]} · 레이블: {', '.join(updated.tags) or '없음'}",
+            link=f"{settings.app_url.rstrip('/')}{link}",
+            extra={"task_id": updated.id, "key": key, "stage": updated.stage.value, "tags": updated.tags},
+        )
     return _read(db, updated)
 
 

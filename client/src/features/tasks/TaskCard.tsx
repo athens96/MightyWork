@@ -92,6 +92,11 @@ export function TaskCard({ task, taskKey, href, assignee, stages, selected, chec
         <div className="task-foot">
           <Avatar user={assignee} size={18} />
           <span className="task-who">{assignee ? assignee.name || assignee.email : "미지정"}</span>
+          {task.via_client && (
+            <span className="pill tone-agent agent-via" title={`MCP 클라이언트(${task.via_client}) 출처`}>
+              via {task.via_client}
+            </span>
+          )}
           <span className="spacer" />
           {task.subtask_count > 0 && (
             <span className={`badge ${task.subtask_done === task.subtask_count ? "tone-done" : ""}`} title="하위 일감">

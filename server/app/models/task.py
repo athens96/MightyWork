@@ -104,6 +104,7 @@ class Task(Entity, TaskBase):
     project_id: str
     number: int  # 프로젝트 내 일련번호. 표시용 키는 f"{project.key}-{number}"
     created_by: str
+    via_client: str | None = None  # MCP OAuth client_name (예: Claude Code, MightyCode)
 
 
 class TaskRead(Task):

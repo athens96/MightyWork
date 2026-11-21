@@ -96,6 +96,18 @@ def build_mcp(settings: Settings, db: Database) -> MCPServer:
             raise ToolError("사용자를 찾을 수 없습니다")
         return user
 
+    def actor_client() -> str | None:
+        """현재 MCP 호출을 수행 중인 OAuth 클라이언트(AI 에이전트) 이름 조회."""
+        token = get_access_token()
+        if token is None:
+            return None
+        grant_id = (token.claims or {}).get("grant")
+        if grant_id:
+            grant = db.oauth_grants.get(grant_id)
+            if grant and grant.client_name:
+                return grant.client_name
+        return token.client_id or "MCP"
+
     def project_access(user: User, project: str, need: Permission = Permission.VIEW) -> Access:
         key = project.strip()
         found = [p for p in db.projects.list() if p.id == key or p.key.casefold() == key.casefold()]
@@ -170,7 +182,7 @@ def build_mcp(settings: Settings, db: Database) -> MCPServer:
         except ValidationError as e:
             raise ToolError(f"값이 올바르지 않습니다: {e.errors(include_url=False)[0]['msg']}") from e
         db.tasks.update(after)
-        record_changes(db, before, after, user.id)
+        record_changes(db, before, after, user.id, via_client=actor_client())
         publish_event(db, after.project_id, "task.updated", {"task_id": after.id, "stage": after.stage.value})
         return after
 
@@ -292,8 +304,9 @@ def build_mcp(settings: Settings, db: Database) -> MCPServer:
         except ValidationError as e:
             raise ToolError(f"값이 올바르지 않습니다: {e.errors(include_url=False)[0]['msg']}") from e
         number = allocate_task_number(db, a.project.id)
-        t = db.tasks.create(Task.model_validate(data | {"project_id": a.project.id, "number": number, "created_by": user.id}))
-        record_created(db, t, user.id)
+        via = actor_client()
+        t = db.tasks.create(Task.model_validate(data | {"project_id": a.project.id, "number": number, "created_by": user.id, "via_client": via}))
+        record_created(db, t, user.id, via_client=via)
         publish_event(db, a.project.id, "task.created", {"task_id": t.id, "stage": t.stage.value})
         return task_detail(a.project, t)
 
@@ -351,7 +364,9 @@ def build_mcp(settings: Settings, db: Database) -> MCPServer:
         t = find_task(a.project, task)
         if not body.strip():
             raise ToolError("덧글 내용이 비어 있습니다")
-        comment = db.comments.create(Comment(project_id=a.project.id, task_id=t.id, author_id=user.id, body=body[:20000]))
+        comment = db.comments.create(
+            Comment(project_id=a.project.id, task_id=t.id, author_id=user.id, body=body[:20000], via_client=actor_client())
+        )
         publish_event(db, a.project.id, "comment.created", {"task_id": t.id, "comment_id": comment.id})
         return task_detail(a.project, t)
 
@@ -376,7 +391,8 @@ def build_mcp(settings: Settings, db: Database) -> MCPServer:
         except ValidationError as e:
             raise ToolError(f"값이 올바르지 않습니다: {e.errors(include_url=False)[0]['msg']}") from e
         db.wiki_pages.create(pg)
-        record_revision(db, pg, user.id, note="MCP 작성")
+        via = actor_client()
+        record_revision(db, pg, user.id, note=f"MCP 작성 ({via})" if via else "MCP 작성", via_client=via)
         return page_summary(pg) | {"content": pg.content}
 
     @mcp.tool(annotations=UPDATE)
@@ -403,7 +419,8 @@ def build_mcp(settings: Settings, db: Database) -> MCPServer:
         except ValidationError as e:
             raise ToolError(f"값이 올바르지 않습니다: {e.errors(include_url=False)[0]['msg']}") from e
         db.wiki_pages.update(after)
-        record_revision(db, after, user.id, note="MCP 수정")
+        via = actor_client()
+        record_revision(db, after, user.id, note=f"MCP 수정 ({via})" if via else "MCP 수정", via_client=via)
         propagate_rename(db, a.project, after, before.title)
         return page_summary(after) | {"content": after.content}
 

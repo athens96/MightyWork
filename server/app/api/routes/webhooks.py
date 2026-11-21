@@ -31,6 +31,8 @@ def _to_read(h: ProjectWebhook, generated_secret: str | None = None) -> ProjectW
         url=h.url,
         preset=h.preset,
         events=h.events,
+        trigger_tags=h.trigger_tags,
+        trigger_stages=h.trigger_stages,
         has_secret=bool(h.secret),
         enabled=h.enabled,
         created_at=h.created_at.isoformat(),
@@ -74,6 +76,8 @@ def create_webhook(project: ProjectDep, body: ProjectWebhookCreate, user: Curren
             url=url,
             preset=body.preset,
             events=_filter_events(body.events),
+            trigger_tags=[t.strip() for t in body.trigger_tags if t.strip()],
+            trigger_stages=[s.strip() for s in body.trigger_stages if s.strip()],
             secret=secret,
             enabled=body.enabled,
             created_by=user.id,
@@ -108,6 +112,10 @@ def update_webhook(project: ProjectDep, webhook_id: str, body: ProjectWebhookUpd
         patch["preset"] = body.preset
     if body.events is not None:
         patch["events"] = _filter_events(body.events)
+    if body.trigger_tags is not None:
+        patch["trigger_tags"] = [t.strip() for t in body.trigger_tags if t.strip()]
+    if body.trigger_stages is not None:
+        patch["trigger_stages"] = [s.strip() for s in body.trigger_stages if s.strip()]
     if body.secret is not None:
         patch["secret"] = body.secret.strip()
     if body.enabled is not None:

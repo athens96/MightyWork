@@ -8,6 +8,7 @@ class Comment(Entity):
     task_id: str
     author_id: str
     body: str  # Markdown
+    via_client: str | None = None
 
 
 class CommentCreate(BaseModel):

@@ -13,3 +13,4 @@ class TaskActivity(Entity):
     field: str | None = None
     old: Any = None
     new: Any = None
+    via_client: str | None = None

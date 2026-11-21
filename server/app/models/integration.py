@@ -42,7 +42,7 @@ class GitHubLink(Entity):
 
 
 WebhookPreset = Literal["custom", "slack", "discord"]
-WEBHOOK_EVENTS: tuple[str, ...] = ("task.created", "task.stage_changed", "comment.created", "mention", "due_soon")
+WEBHOOK_EVENTS: tuple[str, ...] = ("task.created", "task.stage_changed", "task.updated", "comment.created", "mention", "due_soon")
 
 
 class ProjectWebhook(Entity):
@@ -51,6 +51,8 @@ class ProjectWebhook(Entity):
     url: str = Field(min_length=8, max_length=500)
     preset: WebhookPreset = "custom"
     events: list[str] = Field(default_factory=lambda: list(WEBHOOK_EVENTS))
+    trigger_tags: list[str] = Field(default=[], max_length=20)  # 비어 있으면 전체, 설정 시 해당 레이블 일감만 트리거
+    trigger_stages: list[str] = Field(default=[], max_length=10)  # 비어 있으면 전체, 설정 시 해당 단계만 트리거
     secret: str = ""
     enabled: bool = True
     created_by: str
@@ -61,6 +63,8 @@ class ProjectWebhookCreate(BaseModel):
     url: str = Field(min_length=8, max_length=500)
     preset: WebhookPreset = "custom"
     events: list[str] = Field(default_factory=lambda: list(WEBHOOK_EVENTS))
+    trigger_tags: list[str] = Field(default=[], max_length=20)
+    trigger_stages: list[str] = Field(default=[], max_length=10)
     secret: str | None = None
     enabled: bool = True
 
@@ -70,6 +74,8 @@ class ProjectWebhookUpdate(BaseModel):
     url: str | None = Field(default=None, min_length=8, max_length=500)
     preset: WebhookPreset | None = None
     events: list[str] | None = None
+    trigger_tags: list[str] | None = Field(default=None, max_length=20)
+    trigger_stages: list[str] | None = Field(default=None, max_length=10)
     secret: str | None = None
     enabled: bool | None = None
 
@@ -81,6 +87,8 @@ class ProjectWebhookRead(BaseModel):
     url: str
     preset: WebhookPreset
     events: list[str]
+    trigger_tags: list[str] = []
+    trigger_stages: list[str] = []
     has_secret: bool
     enabled: bool
     created_at: str

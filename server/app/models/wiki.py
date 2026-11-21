@@ -103,6 +103,7 @@ class WikiRevision(Entity):
     tags: list[str] = []
     editor_id: str
     note: str = ""
+    via_client: str | None = None
 
 
 class WikiRevisionSummary(BaseModel):
@@ -112,6 +113,7 @@ class WikiRevisionSummary(BaseModel):
     title: str
     editor_id: str
     note: str
+    via_client: str | None = None
     created_at: datetime
 
 
