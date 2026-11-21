@@ -42,7 +42,7 @@ async function tryRefresh(): Promise<string | null> {
   return refreshInFlight;
 }
 
-async function fetchWithAuth(path: string, init: RequestInit = {}): Promise<Response> {
+export async function fetchWithAuth(path: string, init: RequestInit = {}): Promise<Response> {
   const send = (token: string | null) => {
     const headers = new Headers(init.headers);
     if (init.body !== undefined && !(init.body instanceof FormData) && !headers.has("Content-Type")) {

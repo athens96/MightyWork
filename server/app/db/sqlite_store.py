@@ -108,6 +108,18 @@ class SqliteEngine:
                 """
             )
             con.execute("CREATE INDEX IF NOT EXISTS idx_oauth_dcr_rate_ip_ts ON oauth_dcr_rate (ip, ts)")
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS project_events (
+                    seq INTEGER PRIMARY KEY AUTOINCREMENT,
+                    channel TEXT NOT NULL,
+                    kind TEXT NOT NULL,
+                    payload TEXT NOT NULL,
+                    ts REAL NOT NULL
+                )
+                """
+            )
+            con.execute("CREATE INDEX IF NOT EXISTS idx_project_events_chan_seq ON project_events (channel, seq)")
             con.execute("COMMIT")
         except BaseException:
             con.execute("ROLLBACK")
@@ -177,6 +189,39 @@ class SqliteEngine:
             if con.in_transaction:
                 con.execute("ROLLBACK")
             raise
+
+    def append_event(self, channel: str, kind: str, payload: dict) -> int:
+        now = time.time()
+        con = self.conn()
+        con.execute("BEGIN IMMEDIATE")
+        try:
+            cur = con.execute(
+                "INSERT INTO project_events (channel, kind, payload, ts) VALUES (?, ?, ?, ?)",
+                (channel, kind, json.dumps(payload, ensure_ascii=False), now),
+            )
+            seq = int(cur.lastrowid or 0)
+            if seq % 100 == 0:
+                con.execute("DELETE FROM project_events WHERE ts < ?", (now - 3600.0,))
+            con.execute("COMMIT")
+            return seq
+        except BaseException:
+            if con.in_transaction:
+                con.execute("ROLLBACK")
+            raise
+
+    def latest_event_seq(self) -> int:
+        row = self.conn().execute("SELECT COALESCE(MAX(seq), 0) FROM project_events").fetchone()
+        return int(row[0]) if row else 0
+
+    def fetch_events(self, channels: list[str], after_seq: int, limit: int = 50) -> list[tuple[int, str, dict]]:
+        if not channels:
+            return []
+        placeholders = ",".join("?" for _ in channels)
+        rows = self.conn().execute(
+            f"SELECT seq, kind, payload FROM project_events WHERE seq > ? AND channel IN ({placeholders}) ORDER BY seq ASC LIMIT ?",
+            (after_seq, *channels, limit),
+        ).fetchall()
+        return [(int(seq), kind, json.loads(raw)) for seq, kind, raw in rows]
 
 
 class SqliteRepository(Repository[T]):

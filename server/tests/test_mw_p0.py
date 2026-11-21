@@ -116,3 +116,35 @@ def test_mw4_github_webhook_pr_and_push_auto_stage(auth_client, client, project)
 
     links = auth_client.get(f"/api/projects/{pid}/tasks/{t['id']}/github").json()
     assert len(links) == 2 and any(l["kind"] == "pr" and l["state"] == "merged" for l in links)
+
+
+def test_mw5_sse_project_events_and_notifications(app, auth_client, project):
+    pid = project["id"]
+    auth_client.post(f"/api/projects/{pid}/members", json={"email": "bob@example.com", "permissions": ["view", "create", "edit"]})
+    bob = login(app, "u2:bob@example.com")
+    stranger = login(app, "u3:stranger@example.com")
+
+    # 프로젝트 멤버가 아니면 SSE 구독 불가
+    assert stranger.get(f"/api/projects/{pid}/events", params={"once": True}).status_code == 404
+
+    # 기준 시점 이후 일감 생성·단계 변경·덧글·배정 알림 발생
+    t = auth_client.post(f"/api/projects/{pid}/tasks", json={"title": "SSE 실시간", "assignee_id": "u2"}).json()
+    auth_client.patch(f"/api/projects/{pid}/tasks/{t['id']}", json={"stage": "in_progress"})
+    auth_client.post(f"/api/projects/{pid}/tasks/{t['id']}/comments", json={"body": "실시간 확인"})
+
+    res = bob.get(f"/api/projects/{pid}/events", params={"since": 0, "once": True})
+    assert res.status_code == 200
+    assert res.headers["content-type"].startswith("text/event-stream")
+    assert res.headers.get("x-accel-buffering") == "no"
+    body = res.text
+    assert "event: connected" in body
+    assert "event: task.created" in body
+    assert "event: task.updated" in body
+    assert "event: comment.created" in body
+    assert "event: notification.created" in body
+
+    # 개인 알림 스트림도 알림 이벤트를 수신해야 함
+    user_stream = bob.get("/api/events", params={"since": 0, "once": True})
+    assert user_stream.status_code == 200
+    assert "event: notification.created" in user_stream.text
+    assert "event: task.created" not in user_stream.text

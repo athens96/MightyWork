@@ -3,6 +3,7 @@ import { Link, NavLink, Outlet, useLocation, useMatch } from "react-router-dom";
 import { notificationsApi } from "../api";
 import { useAuth } from "../auth/AuthContext";
 import { useProjects } from "../features/projects/ProjectsContext";
+import { subscribeSSE } from "../lib/sse";
 import { useTheme } from "../theme";
 import { CommandPalette } from "./CommandPalette";
 import { QuickCreateModal, ShortcutsModal } from "./QuickCreateModal";
@@ -26,6 +27,15 @@ export function Layout() {
   useEffect(() => {
     notificationsApi.list(true).then((r) => setUnread(r.unread_count), () => {});
   }, [location.pathname]);
+
+  useEffect(() => {
+    if (!user) return;
+    return subscribeSSE("/events", (msg) => {
+      if (msg.event === "notification.created") {
+        notificationsApi.list(true).then((r) => setUnread(r.unread_count), () => {});
+      }
+    });
+  }, [user?.id]);
 
   useEffect(() => {
     const onOpenCmd = () => setCmdOpen(true);

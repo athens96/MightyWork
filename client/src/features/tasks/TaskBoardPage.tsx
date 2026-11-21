@@ -5,6 +5,7 @@ import { can as canDo } from "../../lib/permissions";
 import { useAuth } from "../../auth/AuthContext";
 import { PlusIcon } from "../../components/icons";
 import { TASK_CREATED_EVENT } from "../../components/QuickCreateModal";
+import { PROJECT_EVENT, subscribeSSE, type ProjectEventDetail, type SSEStatus } from "../../lib/sse";
 import { dueState } from "../../lib/time";
 import type { Permission, PipelineStage, PipelineStageInfo, Priority, SavedView, Task, TaskUpdate, User } from "../../types";
 import { useCurrentProject } from "../projects/ProjectLayout";
@@ -44,6 +45,7 @@ export function TaskBoardPage() {
   const [newTitle, setNewTitle] = useState("");
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dropStage, setDropStage] = useState<PipelineStage | null>(null);
+  const [liveStatus, setLiveStatus] = useState<SSEStatus>("reconnecting");
 
   const layout = (params.get("view") as ViewLayout) || "board";
   const assignee = params.get("assignee") || "all";
@@ -90,6 +92,32 @@ export function TaskBoardPage() {
     };
     window.addEventListener(TASK_CREATED_EVENT, onQuick);
     return () => window.removeEventListener(TASK_CREATED_EVENT, onQuick);
+  }, [project.id]);
+
+  // MW-5: SSE 실시간 프로젝트 스트림 구독 (보드·상세·알림 자동 갱신)
+  useEffect(() => {
+    let refreshTimer: number | undefined;
+    const stop = subscribeSSE(
+      `/projects/${project.id}/events`,
+      (msg) => {
+        window.dispatchEvent(
+          new CustomEvent<ProjectEventDetail>(PROJECT_EVENT, {
+            detail: { projectId: project.id, event: msg.event, data: msg.data },
+          }),
+        );
+        if (msg.event.startsWith("task.") || msg.event.startsWith("comment.") || msg.event === "github.linked") {
+          if (refreshTimer) window.clearTimeout(refreshTimer);
+          refreshTimer = window.setTimeout(() => {
+            tasksApi.list(project.id).then(setTasks, () => {});
+          }, 150);
+        }
+      },
+      setLiveStatus,
+    );
+    return () => {
+      if (refreshTimer) window.clearTimeout(refreshTimer);
+      stop();
+    };
   }, [project.id]);
 
   const usersById = useMemo(() => new Map(users.map((u) => [u.id, u])), [users]);
@@ -229,16 +257,25 @@ export function TaskBoardPage() {
         ) : (
           <span className="board-create muted readonly-note">보기 권한만 있어 일감을 등록할 수 없습니다.</span>
         )}
-        <div className="segment" role="group" aria-label="보기 방식">
-          {([
-            ["board", "보드"],
-            ["list", "리스트"],
-            ["timeline", "타임라인"],
-          ] as const).map(([v, label]) => (
-            <button key={v} aria-pressed={layout === v} onClick={() => setParam("view", v)}>
-              {label}
-            </button>
-          ))}
+        <div className="row" style={{ gap: 8 }}>
+          <span
+            className={`live-pill ${liveStatus === "connected" ? "is-live" : ""}`}
+            title={liveStatus === "connected" ? "실시간 동기화 연결됨 (SSE)" : "실시간 연결 재시도 중"}
+          >
+            <span className="live-dot" />
+            {liveStatus === "connected" ? "실시간" : "연결 중"}
+          </span>
+          <div className="segment" role="group" aria-label="보기 방식">
+            {([
+              ["board", "보드"],
+              ["list", "리스트"],
+              ["timeline", "타임라인"],
+            ] as const).map(([v, label]) => (
+              <button key={v} aria-pressed={layout === v} onClick={() => setParam("view", v)}>
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 

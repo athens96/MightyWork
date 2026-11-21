@@ -29,6 +29,7 @@ from app.models.task import PIPELINE_LABELS, PipelineStage, Priority, Task, Task
 from app.models.user import User
 from app.models.wiki import PageStatus, PageType, WikiPage
 from app.services.access import Access, accessible_projects, is_member_user, resolve_access
+from app.services.events import publish_event
 from app.services.knowledge_qa import answer_question
 from app.services.links import norm_title, pages_by_title, project_pages, propagate_rename
 from app.services.oauth import server as oauth
@@ -170,6 +171,7 @@ def build_mcp(settings: Settings, db: Database) -> MCPServer:
             raise ToolError(f"값이 올바르지 않습니다: {e.errors(include_url=False)[0]['msg']}") from e
         db.tasks.update(after)
         record_changes(db, before, after, user.id)
+        publish_event(db, after.project_id, "task.updated", {"task_id": after.id, "stage": after.stage.value})
         return after
 
     # ------------------------------------------------------------ 읽기 도구
@@ -292,6 +294,7 @@ def build_mcp(settings: Settings, db: Database) -> MCPServer:
         number = allocate_task_number(db, a.project.id)
         t = db.tasks.create(Task.model_validate(data | {"project_id": a.project.id, "number": number, "created_by": user.id}))
         record_created(db, t, user.id)
+        publish_event(db, a.project.id, "task.created", {"task_id": t.id, "stage": t.stage.value})
         return task_detail(a.project, t)
 
     @mcp.tool(annotations=CREATE)
@@ -348,7 +351,8 @@ def build_mcp(settings: Settings, db: Database) -> MCPServer:
         t = find_task(a.project, task)
         if not body.strip():
             raise ToolError("덧글 내용이 비어 있습니다")
-        db.comments.create(Comment(project_id=a.project.id, task_id=t.id, author_id=user.id, body=body[:20000]))
+        comment = db.comments.create(Comment(project_id=a.project.id, task_id=t.id, author_id=user.id, body=body[:20000]))
+        publish_event(db, a.project.id, "comment.created", {"task_id": t.id, "comment_id": comment.id})
         return task_detail(a.project, t)
 
     @mcp.tool(annotations=CREATE)

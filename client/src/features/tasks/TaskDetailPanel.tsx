@@ -7,6 +7,7 @@ import { EditorSuggestBar, useEditorSuggest } from "../../components/EditorSugge
 import { CloseIcon, DocIcon, EditIcon, LinkIcon, PaperclipIcon } from "../../components/icons";
 import { makeBranchName } from "../../lib/branchName";
 import { extractImageFile, insertUploadedImage } from "../../lib/editorUpload";
+import { PROJECT_EVENT, type ProjectEventDetail } from "../../lib/sse";
 import { useLinkResolver } from "../../lib/useLinkResolver";
 import { Markdown } from "../../components/Markdown";
 import type { Attachment, Comment, GitHubLink, Task, TaskActivity, TaskLink, TaskLinkKind, TaskUpdate, WikiPageSummary } from "../../types";
@@ -94,9 +95,32 @@ export function TaskDetailPanel() {
   useEffect(() => {
     if (boardTask && task && boardTask.updated_at > task.updated_at) {
       setTask(boardTask);
+      setTitle(boardTask.title);
       refreshActivity();
     }
   }, [boardTask?.updated_at]);
+
+  // MW-5: 현재 열려 있는 일감의 덧글·GitHub·이력 실시간 갱신
+  useEffect(() => {
+    const onEvent = (e: Event) => {
+      const detail = (e as CustomEvent<ProjectEventDetail>).detail;
+      if (!detail || detail.projectId !== project.id) return;
+      if (detail.data.task_id !== taskId) return;
+      if (detail.event.startsWith("comment.")) {
+        commentsApi.list(project.id, taskId).then(setComments, () => {});
+      } else if (detail.event === "github.linked") {
+        githubApi.taskLinks(project.id, taskId).then(setGithubLinks, () => {});
+      } else if (detail.event === "task.updated") {
+        tasksApi.get(project.id, taskId).then((t) => {
+          setTask(t);
+          setTitle(t.title);
+        }, () => {});
+        refreshActivity();
+      }
+    };
+    window.addEventListener(PROJECT_EVENT, onEvent);
+    return () => window.removeEventListener(PROJECT_EVENT, onEvent);
+  }, [project.id, taskId, refreshActivity]);
 
   // Esc 닫기 + Linear 스타일 상세 패널 단축키 (1~4 우선순위, A 내게 배정, S 다음 단계)
   useEffect(() => {

@@ -23,6 +23,7 @@ from app.models.task import (
 )
 from app.services.access import accessible_projects, is_member_user
 from app.services.audit import record_audit
+from app.services.events import publish_event
 from app.services.links import link_targets, norm_title, pages_by_title, project_pages
 from app.services.notifications import notify_mentions, notify_user
 from app.services.projects import allocate_task_number
@@ -207,6 +208,7 @@ def create_task(project: ProjectDep, body: TaskCreate, user: CurrentUser, db: Db
         target_id=task.id,
         summary=f"{key} {task.title} 생성",
     )
+    publish_event(db, project.id, "task.created", {"task_id": task.id, "stage": task.stage.value})
     return _read(db, task, 0, (0, 0))
 
 
@@ -245,6 +247,7 @@ def update_task(project: ProjectDep, task: TaskDep, body: TaskUpdate, user: Curr
             title=f"{key} '{updated.title}' 설명에서 나를 언급했습니다",
             link=link,
         )
+    publish_event(db, project.id, "task.updated", {"task_id": updated.id, "stage": updated.stage.value})
     return _read(db, updated)
 
 
@@ -261,6 +264,7 @@ def delete_task(project: ProjectDep, task: TaskDep, user: CurrentUser, db: DbDep
         target_id=task.id,
         summary=f"{key} {task.title} 삭제",
     )
+    publish_event(db, project.id, "task.deleted", {"task_id": task.id})
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

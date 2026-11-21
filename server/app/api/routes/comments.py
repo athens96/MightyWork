@@ -4,6 +4,7 @@ from app.api.deps import AccessDep, CurrentUser, DbDep, ProjectDep, TaskDep, app
 from app.models.activity import TaskActivity
 from app.models.comment import Comment, CommentCreate, CommentUpdate
 from app.models.member import Permission
+from app.services.events import publish_event
 from app.services.notifications import notify_mentions, notify_user
 
 router = APIRouter(prefix="/projects/{project_id}/tasks/{task_id}", tags=["comments"])
@@ -42,6 +43,7 @@ def create_comment(project: ProjectDep, task: TaskDep, body: CommentCreate, user
                 body=" ".join(comment.body.split())[:140],
                 link=link,
             )
+    publish_event(db, project.id, "comment.created", {"task_id": task.id, "comment_id": comment.id})
     return comment
 
 
@@ -59,12 +61,15 @@ def _own_comment(db: DbDep, task_id: str, comment_id: str, user_id: str, admin_o
 def update_comment(task: TaskDep, comment_id: str, body: CommentUpdate, user: CurrentUser, db: DbDep) -> Comment:
     updated = apply_patch(_own_comment(db, task.id, comment_id, user.id), body)
     db.comments.update(updated)
+    publish_event(db, task.project_id, "comment.updated", {"task_id": task.id, "comment_id": updated.id})
     return updated
 
 
 @router.delete("/comments/{comment_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_comment(access: AccessDep, task: TaskDep, comment_id: str, user: CurrentUser, db: DbDep) -> Response:
-    db.comments.delete(_own_comment(db, task.id, comment_id, user.id, admin_ok=access.can(Permission.ADMIN)).id)
+    cid = _own_comment(db, task.id, comment_id, user.id, admin_ok=access.can(Permission.ADMIN)).id
+    db.comments.delete(cid)
+    publish_event(db, task.project_id, "comment.deleted", {"task_id": task.id, "comment_id": cid})
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

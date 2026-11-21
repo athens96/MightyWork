@@ -102,6 +102,32 @@ class Database:
         self.data_dir = data_dir
         self._sqlite = sqlite_engine
         self._seq_lock = threading.RLock()
+        self._events: list[tuple[int, str, str, dict]] = []
+        self._event_seq = 0
+
+    def append_event(self, channel: str, kind: str, payload: dict) -> int:
+        if self._sqlite is not None:
+            return self._sqlite.append_event(channel, kind, payload)
+        with self._seq_lock:
+            self._event_seq += 1
+            self._events.append((self._event_seq, channel, kind, payload))
+            if len(self._events) > 1000:
+                self._events = self._events[-500:]
+            return self._event_seq
+
+    def latest_event_seq(self) -> int:
+        if self._sqlite is not None:
+            return self._sqlite.latest_event_seq()
+        with self._seq_lock:
+            return self._event_seq
+
+    def fetch_events(self, channels: list[str], after_seq: int, limit: int = 50) -> list[tuple[int, str, dict]]:
+        if self._sqlite is not None:
+            return self._sqlite.fetch_events(channels, after_seq, limit)
+        wanted = set(channels)
+        with self._seq_lock:
+            matched = [(seq, kind, payload) for seq, ch, kind, payload in self._events if seq > after_seq and ch in wanted]
+            return matched[:limit]
 
     def allocate_task_number(self, project_id: str) -> int:
         if self._sqlite is not None:

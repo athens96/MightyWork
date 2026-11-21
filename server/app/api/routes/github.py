@@ -13,6 +13,7 @@ from app.models.integration import GitHubIntegration, GitHubIntegrationRead, Git
 from app.models.member import Permission
 from app.models.task import PipelineStage
 from app.services.audit import record_audit
+from app.services.events import publish_event
 from app.services.tasks import record_changes
 
 router = APIRouter(tags=["github"])
@@ -115,6 +116,7 @@ def _upsert_link(db, *, project_id: str, task_id: str, kind: str, ref: str, titl
         db.github_links.create(
             GitHubLink(project_id=project_id, task_id=task_id, kind=kind, ref=ref, title=title[:200], url=url, state=state, author=author, branch=branch)
         )
+    publish_event(db, project_id, "github.linked", {"task_id": task_id, "kind": kind, "ref": ref, "state": state})
 
 
 def _transition(db, task, next_stage: PipelineStage) -> None:
@@ -123,6 +125,7 @@ def _transition(db, task, next_stage: PipelineStage) -> None:
     updated = task.model_copy(update={"stage": next_stage, "updated_at": utcnow()})
     db.tasks.update(updated)
     record_changes(db, task, updated, "github")
+    publish_event(db, task.project_id, "task.updated", {"task_id": task.id, "stage": next_stage.value})
 
 
 @router.post("/webhooks/github")

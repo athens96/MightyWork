@@ -955,3 +955,32 @@ mark { background: color-mix(in srgb, var(--wait) 35%, transparent); color: inhe
 .shortcuts-grid { display: flex; flex-direction: column; gap: 8px; }
 .shortcut-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 12.5px; padding: 4px 0; border-bottom: 1px solid var(--line); }
 .shortcut-row:last-child { border-bottom: none; }
+
+/* MW-5: 실시간 동기화 상태 표시 */
+.live-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--ink-muted);
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--wait);
+}
+.live-pill.is-live {
+  color: var(--ink-2);
+}
+.live-pill.is-live .live-dot {
+  background: var(--done);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--done) 22%, transparent);
+}

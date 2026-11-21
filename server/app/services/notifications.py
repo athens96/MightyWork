@@ -7,6 +7,7 @@ from app.models.notification import Notification, NotificationKind
 from app.models.project import Project
 from app.models.user import User
 from app.services.access import project_related_users
+from app.services.events import publish_user_event
 
 _CODE = re.compile(r"```.*?```|`[^`\n]*`", re.S)
 # @email@domain.com 또는 @이름/로컬파트 (앞이 단어 문자나 이메일 중간이 아닌 경우)
@@ -58,7 +59,7 @@ def notify_user(
 ) -> Notification | None:
     if user_id == actor_id:
         return None
-    return db.notifications.create(
+    created = db.notifications.create(
         Notification(
             user_id=user_id,
             project_id=project_id,
@@ -69,6 +70,8 @@ def notify_user(
             link=link,
         )
     )
+    publish_user_event(db, user_id, "notification.created", {"notification_id": created.id, "project_id": project_id, "kind": kind})
+    return created
 
 
 def notify_mentions(
