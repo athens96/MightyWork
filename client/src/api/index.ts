@@ -15,6 +15,7 @@ import type {
   LocalGraph,
   McpInfo,
   Member,
+  MyTask,
   NotificationItem,
   NotificationList,
   OAuthGrant,
@@ -118,6 +119,13 @@ export const viewsApi = {
 };
 
 export const tasksApi = {
+  my: (params: { scope?: "assigned" | "created" | "all"; due_soon?: boolean; include_done?: boolean } = {}) => {
+    const qs = new URLSearchParams();
+    if (params.scope) qs.set("scope", params.scope);
+    if (params.due_soon) qs.set("due_soon", "true");
+    if (params.include_done) qs.set("include_done", "true");
+    return http.get<MyTask[]>(`/my/tasks${qs.size ? `?${qs}` : ""}`);
+  },
   list: (projectId: string, params: { stage?: PipelineStage; assignee_id?: string; parent_id?: string } = {}) => {
     const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v) as [string, string][]);
     return http.get<Task[]>(`/projects/${projectId}/tasks${qs.size ? `?${qs}` : ""}`);

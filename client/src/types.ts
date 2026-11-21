@@ -103,6 +103,11 @@ export interface Task {
   updated_at: string;
 }
 
+export interface MyTask extends Task {
+  project_key: string;
+  project_name: string;
+}
+
 type TaskServerFields = "id" | "project_id" | "number" | "created_by" | "created_at" | "updated_at" | "comment_count" | "subtask_count" | "subtask_done";
 export type TaskCreate = Pick<Task, "title"> & Partial<Omit<Task, TaskServerFields>>;
 export type TaskUpdate = Partial<Omit<Task, TaskServerFields>>;

@@ -1,3 +1,6 @@
+from datetime import date, timedelta
+from typing import Literal
+
 from fastapi import APIRouter, HTTPException, Response, status
 
 from app.api.deps import CurrentUser, DbDep, ProjectDep, TaskDep, apply_patch, require
@@ -8,6 +11,7 @@ from app.models.task import (
     PIPELINE_LABELS,
     PipelineStage,
     PipelineStageInfo,
+    Priority,
     Task,
     TaskCreate,
     TaskLink,
@@ -17,7 +21,7 @@ from app.models.task import (
     TaskRead,
     TaskUpdate,
 )
-from app.services.access import is_member_user
+from app.services.access import accessible_projects, is_member_user
 from app.services.audit import record_audit
 from app.services.links import link_targets, norm_title, pages_by_title, project_pages
 from app.services.notifications import notify_mentions, notify_user
@@ -34,10 +38,74 @@ _REVERSE_KIND = {
 }
 
 
+class MyTaskRead(TaskRead):
+    project_key: str
+    project_name: str
+
+
+_PRIO_ORDER = {Priority.URGENT: 0, Priority.HIGH: 1, Priority.MEDIUM: 2, Priority.LOW: 3}
+
+
 @pipeline_router.get("/pipeline", response_model=list[PipelineStageInfo])
 def get_pipeline(_: CurrentUser) -> list[PipelineStageInfo]:
     """보드 컬럼 구성(파이프라인 단계). 모든 프로젝트 공통."""
     return [PipelineStageInfo(key=s, label=PIPELINE_LABELS[s]) for s in PipelineStage]
+
+
+@pipeline_router.get("/my/tasks", response_model=list[MyTaskRead])
+def list_my_tasks(
+    user: CurrentUser,
+    db: DbDep,
+    scope: Literal["assigned", "created", "all"] = "assigned",
+    due_soon: bool = False,
+    include_done: bool = False,
+    stage: PipelineStage | None = None,
+) -> list[MyTaskRead]:
+    """내가 속한 모든 프로젝트에서 내 일감을 한 번에 조회한다 (Linear My Issues 스타일)."""
+    projects_by_id = {a.project.id: a.project for a in accessible_projects(db, user)}
+    if not projects_by_id:
+        return []
+    cutoff = date.today() + timedelta(days=2)
+    all_tasks = db.tasks.list(lambda t: t.project_id in projects_by_id)
+    sub_counts: dict[str, list[int]] = {}
+    for t in all_tasks:
+        if t.parent_id:
+            pair = sub_counts.setdefault(t.parent_id, [0, 0])
+            pair[0] += 1
+            if t.stage == PipelineStage.DONE:
+                pair[1] += 1
+    comment_counts: dict[str, int] = {}
+    for c in db.comments.list(lambda c: c.project_id in projects_by_id):
+        comment_counts[c.task_id] = comment_counts.get(c.task_id, 0) + 1
+
+    picked: list[MyTaskRead] = []
+    for t in all_tasks:
+        if scope == "assigned" and t.assignee_id != user.id:
+            continue
+        if scope == "created" and t.created_by != user.id:
+            continue
+        if scope == "all" and t.assignee_id != user.id and t.created_by != user.id:
+            continue
+        if stage is not None and t.stage != stage:
+            continue
+        if not include_done and stage != PipelineStage.DONE and t.stage == PipelineStage.DONE:
+            continue
+        if due_soon and (t.due_date is None or t.due_date > cutoff or t.stage == PipelineStage.DONE):
+            continue
+        p = projects_by_id[t.project_id]
+        base = _read(db, t, comment_counts.get(t.id, 0), tuple(sub_counts.get(t.id, (0, 0))))
+        picked.append(MyTaskRead(**base.model_dump(), project_key=p.key, project_name=p.name))
+
+    return sorted(
+        picked,
+        key=lambda t: (
+            t.stage == PipelineStage.DONE,
+            t.due_date is None,
+            t.due_date or date.max,
+            _PRIO_ORDER[t.priority],
+            -t.updated_at.timestamp(),
+        ),
+    )
 
 
 def _ensure_assignee_is_member(db: Database, project: Project, assignee_id: str | None) -> None:

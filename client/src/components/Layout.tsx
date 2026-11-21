@@ -4,7 +4,7 @@ import { notificationsApi } from "../api";
 import { useAuth } from "../auth/AuthContext";
 import { useProjects } from "../features/projects/ProjectsContext";
 import { useTheme } from "../theme";
-import { BellIcon, BoardIcon, DocIcon, FolderIcon, GraphIcon, GridIcon, LogoutIcon, MoonIcon, PlugIcon, PlusIcon, SearchIcon, SunIcon } from "./icons";
+import { BellIcon, BoardIcon, CheckSquareIcon, DocIcon, FolderIcon, GraphIcon, GridIcon, LogoutIcon, MoonIcon, PlugIcon, PlusIcon, SearchIcon, SunIcon } from "./icons";
 
 /** MightyCode 사이드바: 검색 → 홈 행 → 섹션 머리 → 프로젝트 행(+하위 일감/위키/지식) → 하단 바 */
 export function Layout() {
@@ -41,6 +41,12 @@ export function Layout() {
           </span>
           전체 프로젝트
           <span className="side-count">{projects.length}</span>
+        </NavLink>
+        <NavLink to="/my-tasks" className="side-home">
+          <span className="tile-icon">
+            <CheckSquareIcon size={11} />
+          </span>
+          내 일감
         </NavLink>
 
         <div className="side-section">
