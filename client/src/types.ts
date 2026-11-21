@@ -414,3 +414,25 @@ export interface QAResponse {
   graph_nodes: GraphNode[];
   graph_edges: GraphEdge[];
 }
+
+export interface GitHubConfig {
+  repo: string;
+  has_secret: boolean;
+  auto_transition: boolean;
+  webhook_url: string;
+  generated_secret?: string | null;
+}
+
+export interface GitHubLink {
+  id: string;
+  project_id: string;
+  task_id: string;
+  kind: "pr" | "commit";
+  ref: string;
+  title: string;
+  url: string;
+  state: string;
+  author: string;
+  branch: string;
+  updated_at: string;
+}

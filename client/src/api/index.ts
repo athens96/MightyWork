@@ -8,6 +8,8 @@ import type {
   ConsentRequest,
   EntityKind,
   ExtractResult,
+  GitHubConfig,
+  GitHubLink,
   GlossaryTerm,
   GlossaryUsage,
   KnowledgeEntity,
@@ -239,6 +241,13 @@ export const knowledgeApi = {
     http.patch<KnowledgeRelation>(`/projects/${projectId}/knowledge/relations/${id}`, body),
   deleteRelation: (projectId: string, id: string) => http.delete(`/projects/${projectId}/knowledge/relations/${id}`),
   qa: (projectId: string, question: string) => http.post<QAResponse>(`/projects/${projectId}/knowledge/qa`, { question }),
+};
+
+export const githubApi = {
+  getConfig: (projectId: string) => http.get<GitHubConfig>(`/projects/${projectId}/github`),
+  saveConfig: (projectId: string, body: { repo: string; webhook_secret?: string; rotate_secret?: boolean; auto_transition: boolean }) =>
+    http.put<GitHubConfig>(`/projects/${projectId}/github`, body),
+  taskLinks: (projectId: string, taskId: string) => http.get<GitHubLink[]>(`/projects/${projectId}/tasks/${taskId}/github`),
 };
 
 export const oauthApi = {

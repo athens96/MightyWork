@@ -13,6 +13,7 @@ from app.api.routes import (
     auth,
     comments,
     export,
+    github,
     importer,
     knowledge,
     knowledge_base,
@@ -96,6 +97,7 @@ def create_app(settings: Settings | None = None, db: Database | None = None) -> 
     api.include_router(notifications.router)
     api.include_router(knowledge.router)
     api.include_router(knowledge_base.router)
+    api.include_router(github.router)
     api.include_router(export.router)
     api.include_router(importer.router)
     api.include_router(oauth.api)

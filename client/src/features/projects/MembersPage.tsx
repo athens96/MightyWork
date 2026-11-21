@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { membersApi, projectsApi } from "../../api";
+import { githubApi, membersApi, projectsApi } from "../../api";
 import { ApiError } from "../../api/http";
 import { useAuth } from "../../auth/AuthContext";
 import { Avatar } from "../../components/Avatar";
 import { PlusIcon, TrashIcon } from "../../components/icons";
 import { can, normalize, PERMISSION_HINT, PERMISSION_LABEL, PERMISSIONS, PRESETS } from "../../lib/permissions";
 import { timeAgo } from "../../lib/time";
-import type { AuditLog, Member, Permission } from "../../types";
+import type { AuditLog, GitHubConfig, Member, Permission } from "../../types";
 import { useCurrentProject } from "./ProjectLayout";
 import { useProjects } from "./ProjectsContext";
 
@@ -25,7 +25,10 @@ export function MembersPage() {
   const [members, setMembers] = useState<Member[]>([]);
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [logFilter, setLogFilter] = useState("");
-  const [tab, setTab] = useState<"members" | "audit">("members");
+  const [gh, setGh] = useState<GitHubConfig | null>(null);
+  const [ghRepo, setGhRepo] = useState("");
+  const [ghAuto, setGhAuto] = useState(true);
+  const [tab, setTab] = useState<"members" | "integrations" | "audit">("members");
   const [email, setEmail] = useState("");
   const [preset, setPreset] = useState(1);
   const [sendInvite, setSendInvite] = useState(true);
@@ -43,7 +46,27 @@ export function MembersPage() {
 
   useEffect(() => {
     if (tab === "audit") reloadLogs();
-  }, [tab, reloadLogs]);
+    if (tab === "integrations") {
+      githubApi.getConfig(project.id).then((cfg) => {
+        setGh(cfg);
+        setGhRepo(cfg.repo);
+        setGhAuto(cfg.auto_transition);
+      }, () => {});
+    }
+  }, [tab, reloadLogs, project.id]);
+
+  const saveGitHub = async (e: FormEvent, rotate = false) => {
+    e.preventDefault();
+    setNotice(null);
+    setError(null);
+    try {
+      const saved = await githubApi.saveConfig(project.id, { repo: ghRepo, auto_transition: ghAuto, rotate_secret: rotate });
+      setGh(saved);
+      setNotice(saved.generated_secret ? `저장되었습니다. Webhook Secret (1회 표시): ${saved.generated_secret}` : "GitHub 연동 설정을 저장했습니다.");
+    } catch {
+      setError("GitHub 연동 설정 저장에 실패했습니다.");
+    }
+  };
 
   const add = async (e: FormEvent) => {
     e.preventDefault();
@@ -115,6 +138,9 @@ export function MembersPage() {
           <div className="segment">
             <button aria-pressed={tab === "members"} onClick={() => setTab("members")}>
               멤버 · 권한 ({members.length})
+            </button>
+            <button aria-pressed={tab === "integrations"} onClick={() => setTab("integrations")}>
+              연동 · 설정
             </button>
             <button aria-pressed={tab === "audit"} onClick={() => setTab("audit")}>
               감사 로그
@@ -213,6 +239,39 @@ export function MembersPage() {
             ))}
           </div>
         </>
+      ) : tab === "integrations" ? (
+        <div className="kb-section">
+          {notice && <p className="alert tone-done">{notice}</p>}
+          {error && <p className="error">{error}</p>}
+          <form className="card mcp-connect" onSubmit={(e) => saveGitHub(e, false)}>
+            <h3>GitHub Webhook 연동</h3>
+            <p className="muted mcp-help">
+              PR 제목·브랜치·커밋에 <code>{project.key}-12</code> 를 포함하면 일감에 자동 연결되고, PR 오픈 시 리뷰·머지 시 완료로 이동합니다.
+            </p>
+            {gh && (
+              <div className="copy-row">
+                <code className="mono">{gh.webhook_url}</code>
+                <button type="button" className="btn btn-sm" onClick={() => navigator.clipboard?.writeText(gh.webhook_url)}>
+                  URL 복사
+                </button>
+              </div>
+            )}
+            <div className="kb-form compact" style={{ padding: 0 }}>
+              <input value={ghRepo} onChange={(e) => setGhRepo(e.target.value)} placeholder="저장소 (예: athens96/MightyWork)" />
+              <label className="kind-toggle">
+                <input type="checkbox" checked={ghAuto} onChange={(e) => setGhAuto(e.target.checked)} /> PR/커밋 자동 단계 이동
+              </label>
+              <button type="submit" className="btn btn-primary">
+                저장
+              </button>
+              {gh?.has_secret && (
+                <button type="button" className="btn btn-sm" onClick={(e) => saveGitHub(e, true)}>
+                  시크릿 재발급
+                </button>
+              )}
+            </div>
+          </form>
+        </div>
       ) : (
         <div className="kb-section">
           <div className="kb-actions-bar">

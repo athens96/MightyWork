@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { attachmentsApi, commentsApi, tasksApi, wikiApi } from "../../api";
+import { attachmentsApi, commentsApi, githubApi, tasksApi, wikiApi } from "../../api";
 import { ApiError, saveBlob } from "../../api/http";
 import { useAuth } from "../../auth/AuthContext";
 import { EditorSuggestBar, useEditorSuggest } from "../../components/EditorSuggest";
 import { CloseIcon, DocIcon, EditIcon, LinkIcon, PaperclipIcon } from "../../components/icons";
+import { makeBranchName } from "../../lib/branchName";
 import { extractImageFile, insertUploadedImage } from "../../lib/editorUpload";
 import { useLinkResolver } from "../../lib/useLinkResolver";
 import { Markdown } from "../../components/Markdown";
-import type { Attachment, Comment, Task, TaskActivity, TaskLink, TaskLinkKind, TaskUpdate, WikiPageSummary } from "../../types";
+import type { Attachment, Comment, GitHubLink, Task, TaskActivity, TaskLink, TaskLinkKind, TaskUpdate, WikiPageSummary } from "../../types";
 import { useBoard } from "./boardContext";
 import { TaskChecklist } from "./TaskChecklist";
 import { TaskProperties } from "./TaskProperties";
@@ -30,6 +31,8 @@ export function TaskDetailPanel() {
   const [taskLinks, setTaskLinks] = useState<TaskLink[]>([]);
   const [wikiRefs, setWikiRefs] = useState<WikiPageSummary[]>([]);
   const [wikiLinks, setWikiLinks] = useState<{ title: string; page_id: string | null }[]>([]);
+  const [githubLinks, setGithubLinks] = useState<GitHubLink[]>([]);
+  const [branchCopied, setBranchCopied] = useState(false);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [pages, setPages] = useState<WikiPageSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -66,8 +69,9 @@ export function TaskDetailPanel() {
       tasksApi.subtasks(project.id, taskId),
       tasksApi.links(project.id, taskId),
       attachmentsApi.list(project.id, { task_id: taskId }),
+      githubApi.taskLinks(project.id, taskId).catch(() => [] as GitHubLink[]),
     ])
-      .then(([t, c, a, w, wl, subs, ls, atts]) => {
+      .then(([t, c, a, w, wl, subs, ls, atts, gh]) => {
         if (cancelled) return;
         setTask(t);
         setTitle(t.title);
@@ -78,6 +82,7 @@ export function TaskDetailPanel() {
         setSubtasks(subs);
         setTaskLinks(ls);
         setAttachments(atts);
+        setGithubLinks(gh);
       })
       .catch(() => !cancelled && setNotFound(true));
     return () => {
@@ -204,6 +209,19 @@ export function TaskDetailPanel() {
         <header className="sheet-head">
           <span className="key-badge">{taskKey || "…"}</span>
           <span className="sheet-title">{task?.title}</span>
+          {task && (
+            <button
+              className="btn btn-sm btn-ghost"
+              title="Git 브랜치명 복사"
+              onClick={() => {
+                navigator.clipboard?.writeText(makeBranchName(project.key, task.number, task.title, task.tags));
+                setBranchCopied(true);
+                setTimeout(() => setBranchCopied(false), 1500);
+              }}
+            >
+              {branchCopied ? "브랜치 복사됨" : "브랜치 복사"}
+            </button>
+          )}
           <button
             className="icon-btn"
             title="링크 복사"
@@ -428,6 +446,25 @@ export function TaskDetailPanel() {
                       <Link key={`in-${p.id}`} to={`/projects/${project.id}/wiki/${p.id}`} className="conn-chip">
                         <DocIcon size={11} /> ← {p.title}
                       </Link>
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {/* GitHub PR · 커밋 */}
+              {githubLinks.length > 0 && (
+                <section className="detail-section">
+                  <header className="section-head">
+                    <h3>GitHub PR · 커밋 {githubLinks.length}</h3>
+                  </header>
+                  <div className="conn-group">
+                    {githubLinks.map((g) => (
+                      <a key={g.id} href={g.url} target="_blank" rel="noopener noreferrer" className="conn-chip">
+                        <span className={`pill ${g.state === "merged" ? "tone-done" : g.state === "open" ? "tone-run" : "tone-stop"}`}>
+                          {g.kind === "pr" ? `PR ${g.ref} ${g.state}` : g.ref}
+                        </span>{" "}
+                        {g.title}
+                      </a>
                     ))}
                   </div>
                 </section>
