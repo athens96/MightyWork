@@ -39,6 +39,7 @@ def delete_project_cascade(db: Database, project_id: str) -> bool:
             db.github_links,
             db.project_webhooks,
             db.webhook_deliveries,
+            db.project_intakes,
         ):
             for item in repo.list(lambda x: x.project_id == project_id):
                 repo.delete(item.id)

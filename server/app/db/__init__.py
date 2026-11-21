@@ -10,7 +10,7 @@ from app.models.attachment import Attachment
 from app.models.audit import AuditLog
 from app.models.comment import Comment
 from app.models.cycle import Cycle
-from app.models.integration import GitHubIntegration, GitHubLink, ProjectWebhook, WebhookDelivery
+from app.models.integration import GitHubIntegration, GitHubLink, ProjectIntake, ProjectWebhook, WebhookDelivery
 from app.models.knowledge import GlossaryTerm, KnowledgeEntity, KnowledgeRelation
 from app.models.member import ProjectMember
 from app.models.notification import Notification
@@ -48,6 +48,7 @@ _COLLECTIONS = (
     ("github_links", "github_links.json", GitHubLink),
     ("project_webhooks", "project_webhooks.json", ProjectWebhook),
     ("webhook_deliveries", "webhook_deliveries.json", WebhookDelivery),
+    ("project_intakes", "project_intakes.json", ProjectIntake),
     ("oauth_clients", "oauth_clients.json", OAuthClient),
     ("oauth_grants", "oauth_grants.json", OAuthGrant),
     ("refresh_tokens", "refresh_tokens.json", RefreshToken),
@@ -85,6 +86,7 @@ class Database:
         github_links: Repository[GitHubLink] | None = None,
         project_webhooks: Repository[ProjectWebhook] | None = None,
         webhook_deliveries: Repository[WebhookDelivery] | None = None,
+        project_intakes: Repository[ProjectIntake] | None = None,
         *,
         data_dir: Path | None = None,
         sqlite_engine: SqliteEngine | None = None,
@@ -113,6 +115,7 @@ class Database:
         self.github_links = github_links or JsonFileRepository(base / "github_links.json", GitHubLink)
         self.project_webhooks = project_webhooks or JsonFileRepository(base / "project_webhooks.json", ProjectWebhook)
         self.webhook_deliveries = webhook_deliveries or JsonFileRepository(base / "webhook_deliveries.json", WebhookDelivery)
+        self.project_intakes = project_intakes or JsonFileRepository(base / "project_intakes.json", ProjectIntake)
         self.oauth_clients = oauth_clients
         self.oauth_grants = oauth_grants
         self.refresh_tokens = refresh_tokens

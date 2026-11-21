@@ -16,6 +16,7 @@ import type {
   GitHubLink,
   GlossaryTerm,
   GlossaryUsage,
+  IntakeConfig,
   KnowledgeEntity,
   KnowledgeRelation,
   LocalGraph,
@@ -147,6 +148,21 @@ export const templatesApi = {
   list: (projectId: string) => http.get<TaskTemplate[]>(`/projects/${projectId}/task-templates`),
   create: (projectId: string, body: TaskTemplateCreate) => http.post<TaskTemplate>(`/projects/${projectId}/task-templates`, body),
   remove: (projectId: string, id: string) => http.delete(`/projects/${projectId}/task-templates/${id}`),
+};
+
+export const triageApi = {
+  list: (projectId: string, includeDeclined = false) =>
+    http.get<Task[]>(`/projects/${projectId}/triage${includeDeclined ? "?include_declined=true" : ""}`),
+  create: (projectId: string, body: { title: string; description?: string; priority?: Task["priority"]; tags?: string[]; source?: string }) =>
+    http.post<Task>(`/projects/${projectId}/triage`, body),
+  decide: (
+    projectId: string,
+    taskId: string,
+    body: { action: "accept" | "duplicate" | "snooze" | "decline"; target_stage?: PipelineStage; duplicate_of_id?: string; snooze_until?: string },
+  ) => http.post<Task>(`/projects/${projectId}/triage/${taskId}/decide`, body),
+  getIntake: (projectId: string) => http.get<IntakeConfig>(`/projects/${projectId}/intake`),
+  saveIntake: (projectId: string, body: { enabled: boolean; rotate_token?: boolean }) =>
+    http.put<IntakeConfig>(`/projects/${projectId}/intake`, body),
 };
 
 export const tasksApi = {

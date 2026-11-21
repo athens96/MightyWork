@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type DragEvent, type FormEvent } from "react";
-import { Outlet, useMatch, useNavigate, useSearchParams } from "react-router-dom";
-import { cyclesApi, membersApi, pipelineApi, tasksApi, usersApi, viewsApi } from "../../api";
+import { Link, Outlet, useMatch, useNavigate, useSearchParams } from "react-router-dom";
+import { cyclesApi, membersApi, pipelineApi, tasksApi, triageApi, usersApi, viewsApi } from "../../api";
 import { can as canDo } from "../../lib/permissions";
 import { useAuth } from "../../auth/AuthContext";
 import { PlusIcon } from "../../components/icons";
@@ -43,6 +43,7 @@ export function TaskBoardPage() {
   const [members, setMembers] = useState<User[]>([]);
   const [savedViews, setSavedViews] = useState<SavedView[]>([]);
   const [cycles, setCycles] = useState<Cycle[]>([]);
+  const [triageCount, setTriageCount] = useState(0);
   const [newTitle, setNewTitle] = useState("");
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dropStage, setDropStage] = useState<PipelineStage | null>(null);
@@ -70,13 +71,14 @@ export function TaskBoardPage() {
   };
 
   const reload = useCallback(async () => {
-    const [p, t, u, m, v, c] = await Promise.all([
+    const [p, t, u, m, v, c, tr] = await Promise.all([
       pipelineApi.forProject(project.id),
       tasksApi.list(project.id),
       usersApi.listByProject(project.id),
       membersApi.list(project.id),
       viewsApi.list(project.id).catch(() => [] as SavedView[]),
       cyclesApi.list(project.id).catch(() => [] as Cycle[]),
+      triageApi.list(project.id).catch(() => [] as Task[]),
     ]);
     setStages(p);
     setTasks(t);
@@ -84,6 +86,7 @@ export function TaskBoardPage() {
     setMembers(m.flatMap((x) => (x.user ? [x.user] : [])));
     setSavedViews(v);
     setCycles(c);
+    setTriageCount(tr.filter((x) => x.triage_status === "pending").length);
   }, [project.id]);
 
   useEffect(() => {
@@ -114,6 +117,9 @@ export function TaskBoardPage() {
         );
         if (msg.event === "pipeline.updated") {
           pipelineApi.forProject(project.id).then(setStages, () => {});
+        }
+        if (msg.event === "triage.updated") {
+          triageApi.list(project.id).then((tr) => setTriageCount(tr.filter((x) => x.triage_status === "pending").length), () => {});
         }
         if (msg.event.startsWith("task.") || msg.event.startsWith("comment.") || msg.event === "github.linked") {
           if (refreshTimer) window.clearTimeout(refreshTimer);
@@ -313,6 +319,9 @@ export function TaskBoardPage() {
           <span className="board-create muted readonly-note">보기 권한만 있어 일감을 등록할 수 없습니다.</span>
         )}
         <div className="row" style={{ gap: 8 }}>
+          <Link to={`/projects/${project.id}/triage`} className="btn btn-sm" title="트리아지 / 인테이크 대기열">
+            트리아지{triageCount > 0 && <span className="pill tone-wait" style={{ marginLeft: 5 }}>{triageCount}</span>}
+          </Link>
           <span
             className={`live-pill ${liveStatus === "connected" ? "is-live" : ""}`}
             title={liveStatus === "connected" ? "실시간 동기화 연결됨 (SSE)" : "실시간 연결 재시도 중"}

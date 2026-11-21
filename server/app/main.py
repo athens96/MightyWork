@@ -25,6 +25,7 @@ from app.api.routes import (
     projects,
     tasks,
     templates,
+    triage,
     users,
     views,
     webhooks,
@@ -94,6 +95,7 @@ def create_app(settings: Settings | None = None, db: Database | None = None) -> 
     api.include_router(members.router)
     api.include_router(tasks.pipeline_router)
     api.include_router(tasks.router)
+    api.include_router(triage.router)
     api.include_router(templates.router)
     api.include_router(views.router)
     api.include_router(cycles.router)

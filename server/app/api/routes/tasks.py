@@ -164,7 +164,7 @@ def list_my_tasks(
     if not projects_by_id:
         return []
     cutoff = date.today() + timedelta(days=2)
-    all_tasks = db.tasks.list(lambda t: t.project_id in projects_by_id)
+    all_tasks = db.tasks.list(lambda t: t.project_id in projects_by_id and t.triage_status is None)
     sub_counts: dict[str, list[int]] = {}
     for t in all_tasks:
         if t.parent_id:
@@ -253,8 +253,11 @@ def list_tasks(
     assignee_id: str | None = None,
     parent_id: str | None = None,
     cycle_id: str | None = None,
+    include_triage: bool = False,
 ) -> list[TaskRead]:
-    all_project_tasks = db.tasks.list(lambda t: t.project_id == project.id)
+    all_project_tasks = db.tasks.list(
+        lambda t: t.project_id == project.id and (include_triage or t.triage_status is None)
+    )
     sub_counts: dict[str, list[int]] = {}
     for t in all_project_tasks:
         if t.parent_id:

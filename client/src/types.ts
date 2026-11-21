@@ -185,6 +185,9 @@ export interface Task {
   due_date: string | null;
   estimate: number | null; // 스토리 포인트
   checklist: ChecklistItem[]; // 할 일
+  triage_status?: "pending" | "snoozed" | "declined" | null;
+  triage_snooze_until?: string | null;
+  triage_source?: string;
   comment_count: number; // 응답 전용
   subtask_count: number;
   subtask_done: number;
@@ -553,4 +556,10 @@ export interface WebhookDelivery {
   attempts: number;
   error: string;
   created_at: string;
+}
+
+export interface IntakeConfig {
+  enabled: boolean;
+  token: string;
+  intake_url: string;
 }

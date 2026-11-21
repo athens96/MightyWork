@@ -1,5 +1,6 @@
 from datetime import date
 from enum import Enum
+from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -87,6 +88,9 @@ class TaskBase(BaseModel):
     due_date: date | None = None  # 종료일(마감)
     estimate: int | None = Field(default=None, ge=0, le=100)  # 추정치(스토리 포인트)
     checklist: list[ChecklistItem] = Field(default=[], max_length=200)
+    triage_status: Literal["pending", "snoozed", "declined"] | None = None
+    triage_snooze_until: date | None = None
+    triage_source: str = Field(default="", max_length=120)
 
     @model_validator(mode="after")
     def _check_dates(self):

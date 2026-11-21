@@ -96,3 +96,9 @@ class WebhookDelivery(Entity):
     ok: bool = False
     attempts: int = 1
     error: str = ""
+
+
+class ProjectIntake(Entity):
+    project_id: str
+    token: str
+    enabled: bool = True
