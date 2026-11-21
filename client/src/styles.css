@@ -1139,3 +1139,54 @@ mark { background: color-mix(in srgb, var(--wait) 35%, transparent); color: inhe
   flex-direction: column;
   gap: 2px;
 }
+
+/* MW-8: 위키 체크리스트·선택 텍스트 → 원클릭 일감 생성 */
+.wiki-to-task-btn {
+  margin-left: 8px;
+  padding: 1px 6px;
+  border-radius: 5px;
+  border: 1px solid var(--line);
+  background: var(--card-raised);
+  color: var(--ink-muted);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  opacity: 0.45;
+  vertical-align: middle;
+  transition: opacity 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+.markdown li.task-list-item:hover .wiki-to-task-btn,
+.wiki-to-task-btn:focus-visible {
+  opacity: 1;
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.wiki-selection-pop {
+  position: fixed;
+  z-index: 80;
+  padding: 6px 11px;
+  border-radius: 8px;
+  border: 1px solid var(--accent);
+  background: var(--card);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.24);
+  cursor: pointer;
+}
+.wiki-selection-pop:hover {
+  background: var(--accent);
+  color: #fff;
+}
+.wiki-toast {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  border-radius: 8px;
+  border: 1px solid var(--done);
+  background: color-mix(in srgb, var(--done) 10%, var(--card));
+  font-size: 12.5px;
+}

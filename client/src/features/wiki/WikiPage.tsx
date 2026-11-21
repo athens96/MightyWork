@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
-import { attachmentsApi, membersApi, wikiApi } from "../../api";
+import { attachmentsApi, membersApi, tasksApi, wikiApi } from "../../api";
 import { ApiError, saveBlob } from "../../api/http";
 import type { Attachment, LocalGraph, PageLinks, UnlinkedMention, User, WikiPage as WikiPageType, WikiPageSummary } from "../../types";
 import { LocalGraphView } from "./LocalGraphView";
@@ -16,6 +16,7 @@ import { can } from "../../lib/permissions";
 import { extractImageFile, insertUploadedImage } from "../../lib/editorUpload";
 import { timeAgo } from "../../lib/time";
 import { useLinkResolver } from "../../lib/useLinkResolver";
+import { injectTaskKeyIntoChecklist, injectTaskKeyIntoSelection } from "../../lib/wikiToTask";
 import { STAGE_TONE } from "../tasks/tones";
 import { WikiTree } from "./WikiTree";
 
@@ -45,6 +46,9 @@ export function WikiPage() {
   const [importing, setImporting] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [selectionPop, setSelectionPop] = useState<{ text: string; top: number; left: number } | null>(null);
+  const [createdNotice, setCreatedNotice] = useState<{ id: string; key: string; title: string } | null>(null);
+  const mdWrapRef = useRef<HTMLDivElement>(null);
   const suggest = useEditorSuggest(draft.content, editorCursor, pages, members);
 
   // HWP·HWPX·DOCX·PDF·Markdown 파일 → 새 위키 페이지
@@ -76,6 +80,8 @@ export function WikiPage() {
 
   useEffect(() => {
     setEditing(false);
+    setSelectionPop(null);
+    setCreatedNotice(null);
     if (!pageId) return setPage(null);
     let cancelled = false;
     wikiApi.get(project.id, pageId).then(
@@ -165,6 +171,62 @@ export function WikiPage() {
     setEditing(false);
     reloadTree();
     reloadLinks(updated.id);
+  };
+
+  // MW-8: 위키 체크리스트 항목 또는 드래그 선택한 텍스트로 원클릭 일감 생성 + MW-n 키 자동 삽입
+  const createTaskFromWiki = useCallback(
+    async (rawText: string, mode: "checklist" | "selection") => {
+      if (!page || !canCreate || !canEdit) return;
+      const clean = rawText.replace(/\s+/g, " ").trim();
+      if (!clean) return;
+      const title = clean.slice(0, 180);
+      const created = await tasksApi.create(project.id, {
+        title,
+        description: `출처 위키: [[${page.title}]]\n\n> ${clean}`,
+      });
+      const key = `${project.key}-${created.number}`;
+      const nextContent =
+        mode === "checklist"
+          ? injectTaskKeyIntoChecklist(page.content, rawText, key)
+          : injectTaskKeyIntoSelection(page.content, rawText, key);
+      if (nextContent !== page.content) {
+        const updated = await wikiApi.update(project.id, page.id, { content: nextContent });
+        setPage(updated);
+      }
+      setSelectionPop(null);
+      window.getSelection()?.removeAllRanges();
+      setCreatedNotice({ id: created.id, key, title: created.title });
+      reloadLinks(page.id);
+    },
+    [page, project.id, project.key, canCreate, canEdit, reloadLinks],
+  );
+
+  const handleWikiMouseUp = () => {
+    if (!canCreate || !canEdit || !mdWrapRef.current) {
+      setSelectionPop(null);
+      return;
+    }
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || sel.rangeCount === 0) {
+      setSelectionPop(null);
+      return;
+    }
+    const text = sel.toString().trim();
+    if (text.length < 2 || text.length > 300) {
+      setSelectionPop(null);
+      return;
+    }
+    const range = sel.getRangeAt(0);
+    if (!mdWrapRef.current.contains(range.commonAncestorContainer)) {
+      setSelectionPop(null);
+      return;
+    }
+    const rect = range.getBoundingClientRect();
+    setSelectionPop({
+      text,
+      top: Math.max(8, rect.top - 38),
+      left: Math.min(window.innerWidth - 180, Math.max(12, rect.left + rect.width / 2 - 75)),
+    });
   };
 
   const remove = async () => {
@@ -265,10 +327,42 @@ export function WikiPage() {
                 )}
               </p>
               <PropertiesBar page={page} users={members} basePath={basePath} />
+              {createdNotice && (
+                <div className="wiki-toast">
+                  <span>
+                    <strong className="mono">{createdNotice.key}</strong> 일감을 만들고 문서에 링크를 삽입했습니다.
+                  </span>
+                  <Link to={`/projects/${project.id}/tasks/${createdNotice.id}`} className="btn btn-sm btn-primary">
+                    일감 열기 →
+                  </Link>
+                  <button type="button" className="btn btn-sm btn-ghost" onClick={() => setCreatedNotice(null)}>
+                    닫기
+                  </button>
+                </div>
+              )}
               {page.content ? (
-                <Markdown links={resolver}>{page.content}</Markdown>
+                <div ref={mdWrapRef} onMouseUp={handleWikiMouseUp}>
+                  <Markdown
+                    links={resolver}
+                    projectKey={project.key}
+                    onConvertChecklistItem={canCreate && canEdit ? (txt) => createTaskFromWiki(txt, "checklist") : undefined}
+                  >
+                    {page.content}
+                  </Markdown>
+                </div>
               ) : (
                 <p className="muted">내용 없음{canEdit && " — 편집을 눌러 작성하세요."}</p>
+              )}
+              {selectionPop && (
+                <button
+                  type="button"
+                  className="wiki-selection-pop"
+                  style={{ top: selectionPop.top, left: selectionPop.left }}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => createTaskFromWiki(selectionPop.text, "selection")}
+                >
+                  + 선택 텍스트로 일감 생성
+                </button>
               )}
               {(attachments.length > 0 || canCreate) && (
                 <section className="wiki-attachments">

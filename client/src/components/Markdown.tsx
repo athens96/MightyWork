@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { isValidElement, useEffect, useMemo, useState, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import { Link } from "react-router-dom";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import "highlight.js/styles/github-dark.css";
 import { requestFile } from "../api/http";
+import { hasTaskKey } from "../lib/wikiToTask";
 import { MISSING_PREFIX, remarkWikiLinks, type LinkResolver } from "../lib/wikilinks";
 
 const ATTACHMENT_RE = /^\/api(\/projects\/[^/]+\/attachments\/[^/]+)$/;
@@ -39,9 +40,40 @@ function AuthImage({ src = "", alt = "", title }: { src?: string; alt?: string; 
   return <img src={src} alt={alt} title={title} loading="lazy" />;
 }
 
-function makeComponents(resolver?: LinkResolver): Components {
+function extractNodeText(node: ReactNode): string {
+  if (typeof node === "string" || typeof node === "number") return String(node);
+  if (Array.isArray(node)) return node.map(extractNodeText).join("");
+  if (isValidElement<{ children?: ReactNode }>(node)) return extractNodeText(node.props.children);
+  return "";
+}
+
+function makeComponents(
+  resolver?: LinkResolver,
+  onConvertChecklistItem?: (text: string) => void,
+  projectKey?: string,
+): Components {
   return {
     img: ({ src, alt, title }) => <AuthImage src={src} alt={alt} title={title} />,
+    li: ({ className, children, ...rest }) => {
+      const isTaskItem = typeof className === "string" && className.includes("task-list-item");
+      const text = isTaskItem && onConvertChecklistItem ? extractNodeText(children).replace(/\s+/g, " ").trim() : "";
+      const showConvert = Boolean(isTaskItem && onConvertChecklistItem && text && !(projectKey && hasTaskKey(text, projectKey)));
+      return (
+        <li className={className} {...rest}>
+          {children}
+          {showConvert && (
+            <button
+              type="button"
+              className="wiki-to-task-btn"
+              title="이 체크리스트 항목으로 일감 생성"
+              onClick={() => onConvertChecklistItem!(text)}
+            >
+              + 일감
+            </button>
+          )}
+        </li>
+      );
+    },
     a: ({ href = "", title, className, children }) => {
       // [[없는 페이지]] — 생성 권한이 있으면 클릭해서 바로 만들기
       if (href.startsWith(MISSING_PREFIX)) {
@@ -79,9 +111,24 @@ function makeComponents(resolver?: LinkResolver): Components {
  * links 를 넘기면 [[페이지]] 위키 링크와 일감 키(KEY-12)를 링크로 바꾼다.
  * 원시 HTML 은 렌더링하지 않는다(XSS 방지) — react-markdown 기본 동작.
  */
-export function Markdown({ children, className = "", links }: { children: string; className?: string; links?: LinkResolver }) {
+export function Markdown({
+  children,
+  className = "",
+  links,
+  onConvertChecklistItem,
+  projectKey,
+}: {
+  children: string;
+  className?: string;
+  links?: LinkResolver;
+  onConvertChecklistItem?: (text: string) => void;
+  projectKey?: string;
+}) {
   const remarkPlugins = useMemo(() => (links ? [remarkGfm, remarkWikiLinks(links)] : [remarkGfm]), [links]);
-  const components = useMemo(() => makeComponents(links), [links]);
+  const components = useMemo(
+    () => makeComponents(links, onConvertChecklistItem, projectKey),
+    [links, onConvertChecklistItem, projectKey],
+  );
   return (
     <div className={`markdown ${className}`}>
       <ReactMarkdown remarkPlugins={remarkPlugins} rehypePlugins={[rehypeHighlight]} components={components}>
