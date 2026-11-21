@@ -4,6 +4,7 @@ import { membersApi, pipelineApi, tasksApi, usersApi, viewsApi } from "../../api
 import { can as canDo } from "../../lib/permissions";
 import { useAuth } from "../../auth/AuthContext";
 import { PlusIcon } from "../../components/icons";
+import { TASK_CREATED_EVENT } from "../../components/QuickCreateModal";
 import { dueState } from "../../lib/time";
 import type { Permission, PipelineStage, PipelineStageInfo, Priority, SavedView, Task, TaskUpdate, User } from "../../types";
 import { useCurrentProject } from "../projects/ProjectLayout";
@@ -79,6 +80,17 @@ export function TaskBoardPage() {
   useEffect(() => {
     reload();
   }, [reload]);
+
+  useEffect(() => {
+    const onQuick = (e: Event) => {
+      const created = (e as CustomEvent<Task>).detail;
+      if (created?.project_id === project.id) {
+        setTasks((prev) => (prev.some((x) => x.id === created.id) ? prev : [...prev, created]));
+      }
+    };
+    window.addEventListener(TASK_CREATED_EVENT, onQuick);
+    return () => window.removeEventListener(TASK_CREATED_EVENT, onQuick);
+  }, [project.id]);
 
   const usersById = useMemo(() => new Map(users.map((u) => [u.id, u])), [users]);
   const allTags = useMemo(() => [...new Set(tasks.flatMap((t) => t.tags))].sort((a, b) => a.localeCompare(b)), [tasks]);

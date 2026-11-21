@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import { NavLink, Outlet, useNavigate, useOutletContext, useParams, useSearchParams } from "react-router-dom";
 import { projectsApi } from "../../api";
+import { OPEN_COMMAND_EVENT } from "../../components/Layout";
 import { BoardIcon, DocIcon, GraphIcon, SearchIcon, TrashIcon, UsersIcon } from "../../components/icons";
 import { roleLabel } from "../../lib/permissions";
 import type { Project } from "../../types";
@@ -14,19 +15,6 @@ export function ProjectLayout() {
   const project = projects.find((p) => p.id === projectId);
   const [params] = useSearchParams();
   const [query, setQuery] = useState(params.get("q") ?? "");
-  const searchInput = useRef<HTMLInputElement>(null);
-
-  // ⌘K / Ctrl+K 로 프로젝트 검색창 포커스
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
-        e.preventDefault();
-        searchInput.current?.focus();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
 
   if (loading) return <p className="muted">불러오는 중…</p>;
   if (!project) return <div className="card empty">프로젝트를 찾을 수 없습니다.</div>;
@@ -58,8 +46,10 @@ export function ProjectLayout() {
         </div>
         <form className="project-search" onSubmit={search} role="search">
           <SearchIcon size={13} />
-          <input ref={searchInput} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="일감·위키 검색" aria-label="프로젝트 검색" />
-          <kbd>⌘K</kbd>
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="일감·위키 검색" aria-label="프로젝트 검색" />
+          <kbd onClick={() => window.dispatchEvent(new Event(OPEN_COMMAND_EVENT))} title="전역 커맨드 팔레트 열기" style={{ cursor: "pointer" }}>
+            ⌘K
+          </kbd>
         </form>
         <nav className="segment">
           <NavLink to="tasks">

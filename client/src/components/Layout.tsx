@@ -4,7 +4,11 @@ import { notificationsApi } from "../api";
 import { useAuth } from "../auth/AuthContext";
 import { useProjects } from "../features/projects/ProjectsContext";
 import { useTheme } from "../theme";
+import { CommandPalette } from "./CommandPalette";
+import { QuickCreateModal, ShortcutsModal } from "./QuickCreateModal";
 import { BellIcon, BoardIcon, CheckSquareIcon, DocIcon, FolderIcon, GraphIcon, GridIcon, LogoutIcon, MoonIcon, PlugIcon, PlusIcon, SearchIcon, SunIcon } from "./icons";
+
+export const OPEN_COMMAND_EVENT = "mightywork:open-command";
 
 /** MightyCode 사이드바: 검색 → 홈 행 → 섹션 머리 → 프로젝트 행(+하위 일감/위키/지식) → 하단 바 */
 export function Layout() {
@@ -13,12 +17,47 @@ export function Layout() {
   const [theme, toggleTheme] = useTheme();
   const [query, setQuery] = useState("");
   const [unread, setUnread] = useState(0);
+  const [cmdOpen, setCmdOpen] = useState(false);
+  const [quickOpen, setQuickOpen] = useState(false);
+  const [keysOpen, setKeysOpen] = useState(false);
   const location = useLocation();
   const activeProjectId = useMatch("/projects/:projectId/*")?.params.projectId;
 
   useEffect(() => {
     notificationsApi.list(true).then((r) => setUnread(r.unread_count), () => {});
   }, [location.pathname]);
+
+  useEffect(() => {
+    const onOpenCmd = () => setCmdOpen(true);
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setCmdOpen((o) => !o);
+        return;
+      }
+      if (e.key === "Escape") {
+        setCmdOpen(false);
+        setQuickOpen(false);
+        setKeysOpen(false);
+        return;
+      }
+      const typing = e.target instanceof HTMLElement && e.target.closest("input, textarea, select, [contenteditable='true']");
+      if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key.toLowerCase() === "c") {
+        e.preventDefault();
+        setQuickOpen(true);
+      } else if (e.key === "?") {
+        e.preventDefault();
+        setKeysOpen((o) => !o);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    window.addEventListener(OPEN_COMMAND_EVENT, onOpenCmd);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener(OPEN_COMMAND_EVENT, onOpenCmd);
+    };
+  }, []);
 
   const q = query.trim().toLowerCase();
   const visible = q ? projects.filter((p) => `${p.key} ${p.name}`.toLowerCase().includes(q)) : projects;
@@ -108,6 +147,17 @@ export function Layout() {
       <main className="content">
         <Outlet />
       </main>
+      <CommandPalette
+        open={cmdOpen}
+        onClose={() => setCmdOpen(false)}
+        projects={projects}
+        activeProjectId={activeProjectId}
+        onQuickCreate={() => setQuickOpen(true)}
+        onToggleTheme={toggleTheme}
+        onShowShortcuts={() => setKeysOpen(true)}
+      />
+      <QuickCreateModal open={quickOpen} onClose={() => setQuickOpen(false)} projects={projects} defaultProjectId={activeProjectId} />
+      <ShortcutsModal open={keysOpen} onClose={() => setKeysOpen(false)} />
     </div>
   );
 }

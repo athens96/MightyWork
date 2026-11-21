@@ -933,3 +933,25 @@ mark { background: color-mix(in srgb, var(--wait) 35%, transparent); color: inhe
 .gantt-bar.tone-task { background: var(--task); }
 .gantt-bar.tone-stop { background: var(--stop); }
 .unscheduled-card { padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+
+/* MW-3: 커맨드 팔레트(⌘K) · 빠른 생성 모달 · 단축키 안내 */
+.modal-backdrop { position: fixed; inset: 0; z-index: 60; background: rgb(0 0 0 / 0.42); display: grid; place-items: start center; padding: 11vh 16px 24px; }
+.cmd-modal { width: min(560px, 100%); background: var(--card); border: 1px solid var(--line-strong); border-radius: var(--r-block); box-shadow: var(--shadow-popover); overflow: hidden; }
+.cmd-input-row { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+.cmd-input-row input { flex: 1; border: none; background: transparent; box-shadow: none; font-size: 14px; padding: 2px 0; }
+.cmd-input-row kbd, .quick-head kbd, .shortcut-row kbd { font-family: var(--font-mono); font-size: 11px; padding: 2px 6px; border-radius: 5px; background: var(--card-raised); border: 1px solid var(--line); color: var(--ink2); }
+.cmd-list { max-height: 360px; overflow-y: auto; padding: 6px; display: flex; flex-direction: column; gap: 2px; }
+.cmd-item { display: flex; align-items: center; gap: 9px; padding: 8px 10px; border: none; border-radius: 7px; background: transparent; text-align: left; font-size: 13px; color: var(--ink); cursor: pointer; }
+.cmd-item.active, .cmd-item:hover { background: var(--accent-soft); color: var(--ink); }
+.cmd-icon { color: var(--ink3); display: inline-flex; }
+.cmd-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cmd-group { font-size: 11px; flex-shrink: 0; }
+.quick-modal { width: min(540px, 100%); padding: 18px; display: flex; flex-direction: column; gap: 10px; }
+.quick-head { display: flex; align-items: center; justify-content: space-between; }
+.quick-head h3 { font-size: 15px; font-weight: 700; }
+.quick-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.quick-row select, .quick-row input { height: 28px; font-size: 12px; }
+.quick-foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+.shortcuts-grid { display: flex; flex-direction: column; gap: 8px; }
+.shortcut-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 12.5px; padding: 4px 0; border-bottom: 1px solid var(--line); }
+.shortcut-row:last-child { border-bottom: none; }

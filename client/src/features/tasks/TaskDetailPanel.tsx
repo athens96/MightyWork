@@ -93,14 +93,33 @@ export function TaskDetailPanel() {
     }
   }, [boardTask?.updated_at]);
 
+  // Esc 닫기 + Linear 스타일 상세 패널 단축키 (1~4 우선순위, A 내게 배정, S 다음 단계)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const typing = e.target instanceof HTMLElement && e.target.closest("input, textarea, select");
-      if (e.key === "Escape" && !typing) close();
+      const typing = e.target instanceof HTMLElement && e.target.closest("input, textarea, select, [contenteditable='true']");
+      if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key === "Escape") {
+        close();
+        return;
+      }
+      if (!editable || !task) return;
+      const prioByKey: Record<string, Task["priority"]> = { "1": "urgent", "2": "high", "3": "medium", "4": "low" };
+      if (prioByKey[e.key]) {
+        e.preventDefault();
+        patch({ priority: prioByKey[e.key] });
+      } else if (e.key.toLowerCase() === "a" && me) {
+        e.preventDefault();
+        patch({ assignee_id: task.assignee_id === me.id ? null : me.id });
+      } else if (e.key.toLowerCase() === "s" && stages.length > 0) {
+        e.preventDefault();
+        const idx = stages.findIndex((s) => s.key === task.stage);
+        const next = stages[(idx + 1) % stages.length];
+        if (next) patch({ stage: next.key });
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [close]);
+  }, [close, editable, task, me, stages]);
 
   const patch = async (body: TaskUpdate) => {
     if (!task) return;
