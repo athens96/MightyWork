@@ -147,6 +147,9 @@ export interface TaskBulkResult {
 export interface PipelineStageInfo {
   key: PipelineStage;
   label: string;
+  color?: string;
+  hidden?: boolean;
+  wip_limit?: number | null;
 }
 
 export interface ChecklistItem {

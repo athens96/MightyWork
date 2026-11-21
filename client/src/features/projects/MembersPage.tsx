@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { githubApi, membersApi, projectsApi, templatesApi } from "../../api";
+import { githubApi, membersApi, pipelineApi, projectsApi, templatesApi } from "../../api";
 import { ApiError } from "../../api/http";
 import { useAuth } from "../../auth/AuthContext";
 import { Avatar } from "../../components/Avatar";
 import { PlusIcon, TrashIcon } from "../../components/icons";
 import { can, normalize, PERMISSION_HINT, PERMISSION_LABEL, PERMISSIONS, PRESETS } from "../../lib/permissions";
 import { timeAgo } from "../../lib/time";
-import type { AuditLog, GitHubConfig, Member, Permission, Priority, TaskTemplate } from "../../types";
+import type { AuditLog, GitHubConfig, Member, Permission, PipelineStageInfo, Priority, TaskTemplate } from "../../types";
 import { useCurrentProject } from "./ProjectLayout";
 import { useProjects } from "./ProjectsContext";
 
@@ -35,6 +35,7 @@ export function MembersPage() {
   const [tplTags, setTplTags] = useState("");
   const [tplDesc, setTplDesc] = useState("");
   const [tplCheck, setTplCheck] = useState("");
+  const [pipeline, setPipeline] = useState<PipelineStageInfo[]>([]);
   const [tab, setTab] = useState<"members" | "integrations" | "audit">("members");
   const [email, setEmail] = useState("");
   const [preset, setPreset] = useState(1);
@@ -60,8 +61,41 @@ export function MembersPage() {
         setGhAuto(cfg.auto_transition);
       }, () => {});
       templatesApi.list(project.id).then(setTemplates, () => {});
+      pipelineApi.forProject(project.id).then(setPipeline, () => {});
     }
   }, [tab, reloadLogs, project.id]);
+
+  const moveStageOrder = (idx: number, dir: -1 | 1) => {
+    setPipeline((prev) => {
+      const target = idx + dir;
+      if (target < 0 || target >= prev.length) return prev;
+      const copy = [...prev];
+      [copy[idx], copy[target]] = [copy[target], copy[idx]];
+      return copy;
+    });
+  };
+
+  const savePipeline = async (e: FormEvent) => {
+    e.preventDefault();
+    setNotice(null);
+    setError(null);
+    if (!pipeline.some((s) => !s.hidden)) {
+      setError("최소 1개 이상의 파이프라인 단계는 표시되어야 합니다.");
+      return;
+    }
+    try {
+      const saved = await pipelineApi.save(project.id, pipeline);
+      setPipeline(saved);
+      setNotice("파이프라인 컬럼 및 WIP 제한을 저장했습니다.");
+    } catch {
+      setError("파이프라인 저장에 실패했습니다.");
+    }
+  };
+
+  const resetPipelineDefaults = async () => {
+    const defaults = await pipelineApi.get();
+    setPipeline(defaults);
+  };
 
   const addTemplate = async (e: FormEvent) => {
     e.preventDefault();
@@ -385,6 +419,96 @@ export function MembersPage() {
               </button>
             </div>
           </form>
+
+          {pipeline.length > 0 && (
+            <form className="card mcp-connect" onSubmit={savePipeline}>
+              <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+                <h3 style={{ margin: 0 }}>파이프라인 단계 · WIP 상한</h3>
+                <button type="button" className="btn btn-sm btn-ghost" onClick={resetPipelineDefaults}>
+                  기본값 불러오기
+                </button>
+              </div>
+              <p className="muted mcp-help">
+                보드 컬럼의 이름·색상·순서·숨김 여부와 컬럼별 WIP 상한을 설정합니다. 숨김 처리한 단계의 일감은 첫 표시 단계로 자동 이동됩니다.
+              </p>
+              <div className="pipeline-editor">
+                {pipeline.map((st, idx) => (
+                  <div key={st.key} className={`pipeline-row ${st.hidden ? "is-hidden" : ""}`}>
+                    <span className="row" style={{ gap: 4 }}>
+                      <button type="button" className="btn btn-sm btn-ghost" disabled={idx === 0} onClick={() => moveStageOrder(idx, -1)} title="위로">
+                        ↑
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-ghost"
+                        disabled={idx === pipeline.length - 1}
+                        onClick={() => moveStageOrder(idx, 1)}
+                        title="아래로"
+                      >
+                        ↓
+                      </button>
+                    </span>
+                    <code className="mono muted" style={{ fontSize: 11.5 }}>
+                      {st.key}
+                    </code>
+                    <input
+                      value={st.label}
+                      onChange={(e) =>
+                        setPipeline((prev) => prev.map((x) => (x.key === st.key ? { ...x, label: e.target.value } : x)))
+                      }
+                      aria-label={`${st.key} 이름`}
+                    />
+                    <select
+                      value={st.color ?? ""}
+                      onChange={(e) =>
+                        setPipeline((prev) => prev.map((x) => (x.key === st.key ? { ...x, color: e.target.value } : x)))
+                      }
+                      aria-label={`${st.key} 색상`}
+                    >
+                      <option value="">기본 색상</option>
+                      <option value="tone-stop">중립</option>
+                      <option value="tone-idle">대기</option>
+                      <option value="tone-run">진행(파랑)</option>
+                      <option value="tone-wait">주의(주황)</option>
+                      <option value="tone-agent">리뷰(보라)</option>
+                      <option value="tone-task">QA(청록)</option>
+                      <option value="tone-done">완료(초록)</option>
+                      <option value="tone-err">강조(빨강)</option>
+                    </select>
+                    <input
+                      type="number"
+                      min={1}
+                      max={200}
+                      placeholder="WIP 무제한"
+                      value={st.wip_limit ?? ""}
+                      onChange={(e) => {
+                        const v = e.target.value.trim();
+                        setPipeline((prev) =>
+                          prev.map((x) => (x.key === st.key ? { ...x, wip_limit: v ? Math.max(1, Number(v)) : null } : x)),
+                        );
+                      }}
+                      aria-label={`${st.key} WIP 상한`}
+                    />
+                    <label className="kind-toggle">
+                      <input
+                        type="checkbox"
+                        checked={!!st.hidden}
+                        onChange={(e) =>
+                          setPipeline((prev) => prev.map((x) => (x.key === st.key ? { ...x, hidden: e.target.checked } : x)))
+                        }
+                      />{" "}
+                      숨김
+                    </label>
+                  </div>
+                ))}
+              </div>
+              <div className="row" style={{ justifyContent: "flex-end", marginTop: 10 }}>
+                <button type="submit" className="btn btn-primary">
+                  파이프라인 저장
+                </button>
+              </div>
+            </form>
+          )}
         </div>
       ) : (
         <div className="kb-section">

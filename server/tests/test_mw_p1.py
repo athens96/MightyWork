@@ -108,3 +108,38 @@ def test_mw7_templates_and_bulk_edit(app, auth_client, project):
     del_res = auth_client.post(f"/api/projects/{pid}/tasks/bulk", json={"task_ids": [t1["id"]], "delete": True})
     assert del_res.status_code == 200 and del_res.json()["affected"] == 1
     assert auth_client.delete(f"/api/projects/{pid}/task-templates/{tid}").status_code == 204
+
+
+def test_mw9_custom_pipeline_wip_and_hidden_remap(app, auth_client, project):
+    from tests.conftest import login
+
+    pid = project["id"]
+    default_stages = auth_client.get(f"/api/projects/{pid}/pipeline").json()
+    assert len(default_stages) == 6
+
+    qa_task = auth_client.post(f"/api/projects/{pid}/tasks", json={"title": "QA 중 일감", "stage": "qa"}).json()
+
+    custom = [
+        {"key": "todo", "label": "준비됨", "color": "tone-idle", "hidden": False, "wip_limit": None},
+        {"key": "in_progress", "label": "개발 중", "color": "tone-run", "hidden": False, "wip_limit": 2},
+        {"key": "review", "label": "리뷰", "color": "tone-agent", "hidden": False, "wip_limit": 3},
+        {"key": "done", "label": "완료", "color": "tone-done", "hidden": False, "wip_limit": None},
+        {"key": "backlog", "label": "백로그", "color": "tone-stop", "hidden": True, "wip_limit": None},
+        {"key": "qa", "label": "QA", "color": "tone-task", "hidden": True, "wip_limit": None},
+    ]
+    saved = auth_client.put(
+        f"/api/projects/{pid}/pipeline",
+        json={"stages": custom, "remap_hidden_to": "review"},
+    )
+    assert saved.status_code == 200, saved.text
+    stages = saved.json()
+    assert [s["key"] for s in stages[:4]] == ["todo", "in_progress", "review", "done"]
+    assert stages[1]["label"] == "개발 중" and stages[1]["wip_limit"] == 2
+
+    # 숨김 처리된 QA 단계에 있던 일감은 remap_hidden_to(review) 로 자동 이동
+    assert auth_client.get(f"/api/projects/{pid}/tasks/{qa_task['id']}").json()["stage"] == "review"
+
+    # 일반 멤버(편집 권한만)는 파이프라인 변경 불가
+    auth_client.post(f"/api/projects/{pid}/members", json={"email": "bob@example.com", "permissions": ["view", "edit"]})
+    bob = login(app, "u2:bob@example.com")
+    assert bob.put(f"/api/projects/{pid}/pipeline", json={"stages": custom}).status_code == 403

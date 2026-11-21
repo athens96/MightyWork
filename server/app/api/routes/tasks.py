@@ -14,6 +14,8 @@ from app.models.task import (
     PipelineStage,
     PipelineStageInfo,
     Priority,
+    ProjectPipeline,
+    ProjectPipelineUpdate,
     Task,
     TaskCreate,
     TaskLink,
@@ -22,6 +24,7 @@ from app.models.task import (
     TaskLinkRead,
     TaskRead,
     TaskUpdate,
+    default_pipeline_stages,
 )
 from app.services.access import accessible_projects, is_member_user
 from app.services.audit import record_audit
@@ -67,8 +70,83 @@ _PRIO_ORDER = {Priority.URGENT: 0, Priority.HIGH: 1, Priority.MEDIUM: 2, Priorit
 
 @pipeline_router.get("/pipeline", response_model=list[PipelineStageInfo])
 def get_pipeline(_: CurrentUser) -> list[PipelineStageInfo]:
-    """보드 컬럼 구성(파이프라인 단계). 모든 프로젝트 공통."""
-    return [PipelineStageInfo(key=s, label=PIPELINE_LABELS[s]) for s in PipelineStage]
+    """보드 컬럼 구성(파이프라인 단계 기본 프리셋)."""
+    return default_pipeline_stages()
+
+
+def _project_pipeline_stages(db: Database, project_id: str) -> list[PipelineStageInfo]:
+    found = db.project_pipelines.list(lambda p: p.project_id == project_id)
+    if not found:
+        return default_pipeline_stages()
+    stages = list(found[0].stages)
+    present = {s.key for s in stages}
+    for s in PipelineStage:
+        if s not in present:
+            stages.append(PipelineStageInfo(key=s, label=PIPELINE_LABELS[s], hidden=True))
+    return stages
+
+
+@pipeline_router.get("/projects/{project_id}/pipeline", response_model=list[PipelineStageInfo])
+def get_project_pipeline(project: ProjectDep, db: DbDep) -> list[PipelineStageInfo]:
+    """프로젝트별 커스텀 파이프라인(이름·색상·순서·숨김·WIP 상한) 조회."""
+    return _project_pipeline_stages(db, project.id)
+
+
+@pipeline_router.put(
+    "/projects/{project_id}/pipeline",
+    response_model=list[PipelineStageInfo],
+    dependencies=[require(Permission.ADMIN)],
+)
+def update_project_pipeline(
+    project: ProjectDep,
+    body: ProjectPipelineUpdate,
+    user: CurrentUser,
+    db: DbDep,
+) -> list[PipelineStageInfo]:
+    """관리자용 파이프라인 설정 저장 + 숨김 단계의 기존 일감 안전 매핑."""
+    seen: set[PipelineStage] = set()
+    normalized: list[PipelineStageInfo] = []
+    for st in body.stages:
+        if st.key in seen:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Duplicate stage: {st.key.value}")
+        seen.add(st.key)
+        normalized.append(st.model_copy(update={"label": st.label.strip() or PIPELINE_LABELS[st.key]}))
+    for s in PipelineStage:
+        if s not in seen:
+            normalized.append(PipelineStageInfo(key=s, label=PIPELINE_LABELS[s], hidden=True))
+
+    visible = [st.key for st in normalized if not st.hidden]
+    if not visible:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "At least one pipeline stage must remain visible")
+
+    hidden_keys = {st.key for st in normalized if st.hidden}
+    fallback = body.remap_hidden_to if (body.remap_hidden_to and body.remap_hidden_to in visible) else visible[0]
+    remapped = 0
+    if hidden_keys:
+        for t in db.tasks.list(lambda x: x.project_id == project.id and x.stage in hidden_keys):
+            moved = t.model_copy(update={"stage": fallback, "updated_at": utcnow()})
+            db.tasks.update(moved)
+            record_changes(db, t, moved, user.id)
+            publish_event(db, project.id, "task.updated", {"task_id": moved.id, "stage": moved.stage.value})
+            remapped += 1
+
+    existing = db.project_pipelines.list(lambda p: p.project_id == project.id)
+    if existing:
+        db.project_pipelines.update(existing[0].model_copy(update={"stages": normalized, "updated_at": utcnow()}))
+    else:
+        db.project_pipelines.create(ProjectPipeline(project_id=project.id, stages=normalized))
+
+    record_audit(
+        db,
+        project_id=project.id,
+        actor_id=user.id,
+        action="project.pipeline_updated",
+        target_type="project",
+        target_id=project.id,
+        summary=f"파이프라인 설정 변경 (표시 {len(visible)}단계, 일감 매핑 {remapped}건)",
+    )
+    publish_event(db, project.id, "pipeline.updated", {"project_id": project.id})
+    return normalized
 
 
 @pipeline_router.get("/my/tasks", response_model=list[MyTaskRead])

@@ -119,6 +119,9 @@ export const notificationsApi = {
 
 export const pipelineApi = {
   get: () => http.get<PipelineStageInfo[]>("/pipeline"),
+  forProject: (projectId: string) => http.get<PipelineStageInfo[]>(`/projects/${projectId}/pipeline`),
+  save: (projectId: string, stages: PipelineStageInfo[], remapHiddenTo?: PipelineStage) =>
+    http.put<PipelineStageInfo[]>(`/projects/${projectId}/pipeline`, { stages, remap_hidden_to: remapHiddenTo }),
 };
 
 export const viewsApi = {

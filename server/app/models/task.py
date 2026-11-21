@@ -132,4 +132,21 @@ class TaskUpdate(BaseModel):
 
 class PipelineStageInfo(BaseModel):
     key: PipelineStage
-    label: str
+    label: str = Field(min_length=1, max_length=40)
+    color: str = Field(default="", max_length=32)  # 선택적 톤 클래스(예: tone-run)
+    hidden: bool = False
+    wip_limit: int | None = Field(default=None, ge=1, le=200)
+
+
+class ProjectPipeline(Entity):
+    project_id: str
+    stages: list[PipelineStageInfo]
+
+
+class ProjectPipelineUpdate(BaseModel):
+    stages: list[PipelineStageInfo] = Field(min_length=1, max_length=6)
+    remap_hidden_to: PipelineStage | None = None
+
+
+def default_pipeline_stages() -> list[PipelineStageInfo]:
+    return [PipelineStageInfo(key=s, label=PIPELINE_LABELS[s]) for s in PipelineStage]

@@ -71,7 +71,7 @@ export function TaskBoardPage() {
 
   const reload = useCallback(async () => {
     const [p, t, u, m, v, c] = await Promise.all([
-      pipelineApi.get(),
+      pipelineApi.forProject(project.id),
       tasksApi.list(project.id),
       usersApi.listByProject(project.id),
       membersApi.list(project.id),
@@ -112,6 +112,9 @@ export function TaskBoardPage() {
             detail: { projectId: project.id, event: msg.event, data: msg.data },
           }),
         );
+        if (msg.event === "pipeline.updated") {
+          pipelineApi.forProject(project.id).then(setStages, () => {});
+        }
         if (msg.event.startsWith("task.") || msg.event.startsWith("comment.") || msg.event === "github.linked") {
           if (refreshTimer) window.clearTimeout(refreshTimer);
           refreshTimer = window.setTimeout(() => {
@@ -176,9 +179,14 @@ export function TaskBoardPage() {
   const count = (...s: PipelineStage[]) => visible.filter((t) => s.includes(t.stage)).length;
   const hasFilters = assignee !== "all" || !!priority || !!tag || !!dueFilter || !!cycleFilter || sort !== "number";
 
+  const visibleStages = useMemo(() => {
+    const active = stages.filter((s) => !s.hidden);
+    return active.length > 0 ? active : stages;
+  }, [stages]);
+
   const can = (perm: Permission) => canDo(project, perm);
   const canEdit = can("edit");
-  const context: BoardContext = { project, tasks, stages, cycles, users, members, can, onCreated, onChanged, onDeleted };
+  const context: BoardContext = { project, tasks, stages: visibleStages, cycles, users, members, can, onCreated, onChanged, onDeleted };
 
   const patchTask = async (taskId: string, body: TaskUpdate) => {
     const current = tasks.find((t) => t.id === taskId);
@@ -422,12 +430,14 @@ export function TaskBoardPage() {
       {layout === "board" && (
         <div className="canvas">
           <div className="board">
-            {stages.map((stage) => {
+            {visibleStages.map((stage) => {
               const items = visible.filter((t) => t.stage === stage.key);
+              const overWip = stage.wip_limit != null && items.length > stage.wip_limit;
+              const tone = stage.color || STAGE_TONE[stage.key];
               return (
                 <section
                   key={stage.key}
-                  className={`column ${STAGE_TONE[stage.key]} ${dropStage === stage.key ? "is-drop-target" : ""}`}
+                  className={`column ${tone} ${dropStage === stage.key ? "is-drop-target" : ""} ${overWip ? "is-wip-exceeded" : ""}`}
                   onDragOver={(e) => {
                     if (!canEdit) return;
                     e.preventDefault();
@@ -442,7 +452,13 @@ export function TaskBoardPage() {
                   <h3 className="column-head">
                     <span className="dot" />
                     {stage.label}
-                    <span className="count">{items.length}</span>
+                    <span
+                      className={`count ${overWip ? "wip-over" : ""}`}
+                      title={stage.wip_limit ? `WIP 상한 ${stage.wip_limit}건${overWip ? " 초과" : ""}` : undefined}
+                    >
+                      {stage.wip_limit ? `${items.length}/${stage.wip_limit}` : items.length}
+                      {overWip && " !"}
+                    </span>
                   </h3>
                   {items.length === 0 && <div className="column-empty">비어 있음</div>}
                   {items.map((task) => (
