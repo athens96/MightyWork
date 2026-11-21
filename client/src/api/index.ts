@@ -33,6 +33,7 @@ import type {
   ProjectCreate,
   ProjectGraph,
   ProjectUpdate,
+  ProjectWebhook,
   QAResponse,
   RelationKind,
   ReviewStatus,
@@ -51,6 +52,8 @@ import type {
   TokenResponse,
   UnlinkedMention,
   User,
+  WebhookDelivery,
+  WebhookPreset,
   WikiPage,
   WikiPageCreate,
   WikiPageSummary,
@@ -275,6 +278,19 @@ export const githubApi = {
   saveConfig: (projectId: string, body: { repo: string; webhook_secret?: string; rotate_secret?: boolean; auto_transition: boolean }) =>
     http.put<GitHubConfig>(`/projects/${projectId}/github`, body),
   taskLinks: (projectId: string, taskId: string) => http.get<GitHubLink[]>(`/projects/${projectId}/tasks/${taskId}/github`),
+};
+
+export const webhooksApi = {
+  list: (projectId: string) => http.get<ProjectWebhook[]>(`/projects/${projectId}/webhooks`),
+  create: (
+    projectId: string,
+    body: { name: string; url: string; preset: WebhookPreset; events: string[]; secret?: string; enabled?: boolean },
+  ) => http.post<ProjectWebhook>(`/projects/${projectId}/webhooks`, body),
+  update: (projectId: string, id: string, body: Partial<{ name: string; url: string; preset: WebhookPreset; events: string[]; enabled: boolean }>) =>
+    http.patch<ProjectWebhook>(`/projects/${projectId}/webhooks/${id}`, body),
+  remove: (projectId: string, id: string) => http.delete(`/projects/${projectId}/webhooks/${id}`),
+  test: (projectId: string, id: string) => http.post<WebhookDelivery>(`/projects/${projectId}/webhooks/${id}/test`),
+  deliveries: (projectId: string, id: string) => http.get<WebhookDelivery[]>(`/projects/${projectId}/webhooks/${id}/deliveries`),
 };
 
 export const oauthApi = {

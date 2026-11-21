@@ -1,11 +1,12 @@
 from fastapi import APIRouter, HTTPException, Response, status
 
-from app.api.deps import AccessDep, CurrentUser, DbDep, ProjectDep, TaskDep, apply_patch, require
+from app.api.deps import AccessDep, CurrentUser, DbDep, ProjectDep, SettingsDep, TaskDep, apply_patch, require
 from app.models.activity import TaskActivity
 from app.models.comment import Comment, CommentCreate, CommentUpdate
 from app.models.member import Permission
 from app.services.events import publish_event
 from app.services.notifications import notify_mentions, notify_user
+from app.services.webhooks import dispatch_project_webhooks
 
 router = APIRouter(prefix="/projects/{project_id}/tasks/{task_id}", tags=["comments"])
 
@@ -16,7 +17,7 @@ def list_comments(task: TaskDep, db: DbDep) -> list[Comment]:
 
 
 @router.post("/comments", response_model=Comment, status_code=status.HTTP_201_CREATED, dependencies=[require(Permission.CREATE)])
-def create_comment(project: ProjectDep, task: TaskDep, body: CommentCreate, user: CurrentUser, db: DbDep) -> Comment:
+def create_comment(project: ProjectDep, task: TaskDep, body: CommentCreate, user: CurrentUser, settings: SettingsDep, db: DbDep) -> Comment:
     comment = db.comments.create(
         Comment(project_id=task.project_id, task_id=task.id, author_id=user.id, body=body.body)
     )
@@ -44,6 +45,15 @@ def create_comment(project: ProjectDep, task: TaskDep, body: CommentCreate, user
                 link=link,
             )
     publish_event(db, project.id, "comment.created", {"task_id": task.id, "comment_id": comment.id})
+    dispatch_project_webhooks(
+        db,
+        project,
+        event="comment.created",
+        title=f"{key} '{task.title}' 새 덧글 ({user.name or user.email})",
+        body=" ".join(comment.body.split())[:180],
+        link=f"{settings.app_url.rstrip('/')}{link}",
+        extra={"task_id": task.id, "comment_id": comment.id, "key": key},
+    )
     return comment
 
 

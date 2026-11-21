@@ -1,14 +1,33 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { githubApi, membersApi, pipelineApi, projectsApi, templatesApi } from "../../api";
+import { githubApi, membersApi, pipelineApi, projectsApi, templatesApi, webhooksApi } from "../../api";
 import { ApiError } from "../../api/http";
 import { useAuth } from "../../auth/AuthContext";
 import { Avatar } from "../../components/Avatar";
 import { PlusIcon, TrashIcon } from "../../components/icons";
 import { can, normalize, PERMISSION_HINT, PERMISSION_LABEL, PERMISSIONS, PRESETS } from "../../lib/permissions";
 import { timeAgo } from "../../lib/time";
-import type { AuditLog, GitHubConfig, Member, Permission, PipelineStageInfo, Priority, TaskTemplate } from "../../types";
+import type {
+  AuditLog,
+  GitHubConfig,
+  Member,
+  Permission,
+  PipelineStageInfo,
+  Priority,
+  ProjectWebhook,
+  TaskTemplate,
+  WebhookDelivery,
+  WebhookPreset,
+} from "../../types";
 import { useCurrentProject } from "./ProjectLayout";
 import { useProjects } from "./ProjectsContext";
+
+const WEBHOOK_EVENT_LABELS: [string, string][] = [
+  ["task.created", "일감 생성"],
+  ["task.stage_changed", "단계 이동"],
+  ["comment.created", "덧글"],
+  ["mention", "@멘션"],
+  ["due_soon", "마감 임박"],
+];
 
 const INVITE_STATUS_MSG: Record<string, string> = {
   sent: "초대 메일을 발송했습니다.",
@@ -36,6 +55,13 @@ export function MembersPage() {
   const [tplDesc, setTplDesc] = useState("");
   const [tplCheck, setTplCheck] = useState("");
   const [pipeline, setPipeline] = useState<PipelineStageInfo[]>([]);
+  const [webhooks, setWebhooks] = useState<ProjectWebhook[]>([]);
+  const [whName, setWhName] = useState("");
+  const [whUrl, setWhUrl] = useState("");
+  const [whPreset, setWhPreset] = useState<WebhookPreset>("slack");
+  const [whEvents, setWhEvents] = useState<string[]>(["task.created", "task.stage_changed", "comment.created", "mention", "due_soon"]);
+  const [whLogsId, setWhLogsId] = useState<string | null>(null);
+  const [whLogs, setWhLogs] = useState<WebhookDelivery[]>([]);
   const [tab, setTab] = useState<"members" | "integrations" | "audit">("members");
   const [email, setEmail] = useState("");
   const [preset, setPreset] = useState(1);
@@ -62,8 +88,64 @@ export function MembersPage() {
       }, () => {});
       templatesApi.list(project.id).then(setTemplates, () => {});
       pipelineApi.forProject(project.id).then(setPipeline, () => {});
+      if (isAdmin) webhooksApi.list(project.id).then(setWebhooks, () => {});
     }
-  }, [tab, reloadLogs, project.id]);
+  }, [tab, reloadLogs, project.id, isAdmin]);
+
+  const addWebhook = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!whName.trim() || !whUrl.trim()) return;
+    setNotice(null);
+    setError(null);
+    try {
+      const created = await webhooksApi.create(project.id, {
+        name: whName.trim(),
+        url: whUrl.trim(),
+        preset: whPreset,
+        events: whEvents,
+      });
+      setWebhooks((prev) => [...prev, created]);
+      setWhName("");
+      setWhUrl("");
+      setNotice(
+        created.generated_secret
+          ? `웹훅 '${created.name}' 을 등록했습니다. 서명 Secret (1회 표시): ${created.generated_secret}`
+          : `웹훅 '${created.name}' 을 등록했습니다.`,
+      );
+    } catch (err) {
+      setError(err instanceof ApiError ? String(err.detail) : "웹훅 등록에 실패했습니다.");
+    }
+  };
+
+  const toggleWebhook = async (h: ProjectWebhook) => {
+    const updated = await webhooksApi.update(project.id, h.id, { enabled: !h.enabled });
+    setWebhooks((prev) => prev.map((x) => (x.id === h.id ? updated : x)));
+  };
+
+  const sendTestWebhook = async (h: ProjectWebhook) => {
+    setNotice(null);
+    setError(null);
+    const d = await webhooksApi.test(project.id, h.id);
+    if (d.ok) setNotice(`'${h.name}' 테스트 발송 성공 (HTTP ${d.status_code ?? 200}, ${d.attempts}회 시도)`);
+    else setError(`'${h.name}' 테스트 발송 실패: ${d.error || "응답 오류"}`);
+    if (whLogsId === h.id) webhooksApi.deliveries(project.id, h.id).then(setWhLogs, () => {});
+  };
+
+  const openWebhookLogs = async (h: ProjectWebhook) => {
+    if (whLogsId === h.id) {
+      setWhLogsId(null);
+      return;
+    }
+    setWhLogsId(h.id);
+    setWhLogs(await webhooksApi.deliveries(project.id, h.id));
+  };
+
+  const removeWebhook = async (h: ProjectWebhook) => {
+    if (!confirm(`웹훅 '${h.name}' 을 삭제할까요?`)) return;
+    await webhooksApi.remove(project.id, h.id);
+    setWebhooks((prev) => prev.filter((x) => x.id !== h.id));
+    if (whLogsId === h.id) setWhLogsId(null);
+  };
 
   const moveStageOrder = (idx: number, dir: -1 | 1) => {
     setPipeline((prev) => {
@@ -509,6 +591,97 @@ export function MembersPage() {
               </div>
             </form>
           )}
+
+          <form className="card mcp-connect" onSubmit={addWebhook}>
+            <h3>외부 알림 Webhook (Slack · Discord · Custom)</h3>
+            <p className="muted mcp-help">
+              일감 생성·단계 이동·덧글·@멘션·마감 임박 이벤트를 Slack, Discord 또는 자체 서버(HMAC-SHA256 서명)로 전송합니다.
+            </p>
+            {webhooks.length > 0 && (
+              <div className="rows" style={{ marginBottom: 12 }}>
+                {webhooks.map((h) => (
+                  <div key={h.id} style={{ display: "flex", flexDirection: "column", gap: 6, padding: "8px 0", borderBottom: "1px solid var(--line)" }}>
+                    <div className="row" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+                      <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+                        <input type="checkbox" checked={h.enabled} onChange={() => toggleWebhook(h)} title="활성/비활성" />
+                        <strong>{h.name}</strong>
+                        <span className="pill tone-idle">{h.preset}</span>
+                        <code className="mono muted" style={{ fontSize: 11.5 }}>
+                          {h.url}
+                        </code>
+                      </div>
+                      <div className="row" style={{ gap: 6 }}>
+                        <button type="button" className="btn btn-sm" onClick={() => sendTestWebhook(h)}>
+                          테스트 발송
+                        </button>
+                        <button type="button" className="btn btn-sm btn-ghost" onClick={() => openWebhookLogs(h)}>
+                          {whLogsId === h.id ? "로그 닫기" : "전송 로그"}
+                        </button>
+                        <button type="button" className="icon-btn danger" onClick={() => removeWebhook(h)} title="웹훅 삭제">
+                          <TrashIcon size={13} />
+                        </button>
+                      </div>
+                    </div>
+                    {whLogsId === h.id && (
+                      <div className="quick-tpl-check" style={{ marginTop: 4 }}>
+                        {whLogs.length === 0 ? (
+                          <span className="muted" style={{ fontSize: 12 }}>
+                            아직 전송 이력이 없습니다.
+                          </span>
+                        ) : (
+                          whLogs.slice(0, 8).map((d) => (
+                            <div key={d.id} className="row" style={{ justifyContent: "space-between", fontSize: 12, padding: "2px 0" }}>
+                              <span>
+                                <span className={`pill ${d.ok ? "tone-done" : "tone-err"}`}>{d.ok ? `HTTP ${d.status_code ?? 200}` : d.error || "실패"}</span>{" "}
+                                <code className="mono">{d.event}</code> ({d.attempts}회)
+                              </span>
+                              <span className="muted">{timeAgo(d.created_at)}</span>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="cycle-form-grid">
+              <label>
+                <span>이름</span>
+                <input value={whName} onChange={(e) => setWhName(e.target.value)} placeholder="예: 개발팀 슬랙" required />
+              </label>
+              <label>
+                <span>포맷 프리셋</span>
+                <select value={whPreset} onChange={(e) => setWhPreset(e.target.value as WebhookPreset)}>
+                  <option value="slack">Slack Incoming Webhook</option>
+                  <option value="discord">Discord Webhook</option>
+                  <option value="custom">Custom JSON (+ HMAC 서명)</option>
+                </select>
+              </label>
+              <label style={{ gridColumn: "1 / -1" }}>
+                <span>Webhook URL (https://)</span>
+                <input type="url" value={whUrl} onChange={(e) => setWhUrl(e.target.value)} placeholder="https://hooks.slack.com/services/..." required />
+              </label>
+            </div>
+            <div className="row" style={{ gap: 12, flexWrap: "wrap", marginTop: 8 }}>
+              {WEBHOOK_EVENT_LABELS.map(([ev, label]) => (
+                <label key={ev} className="kind-toggle">
+                  <input
+                    type="checkbox"
+                    checked={whEvents.includes(ev)}
+                    onChange={(e) =>
+                      setWhEvents((prev) => (e.target.checked ? [...prev, ev] : prev.filter((x) => x !== ev)))
+                    }
+                  />{" "}
+                  {label}
+                </label>
+              ))}
+              <span className="spacer" />
+              <button type="submit" className="btn btn-primary" disabled={!whName.trim() || !whUrl.trim()}>
+                <PlusIcon size={11} /> 웹훅 등록
+              </button>
+            </div>
+          </form>
         </div>
       ) : (
         <div className="kb-section">

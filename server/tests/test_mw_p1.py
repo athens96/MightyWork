@@ -143,3 +143,70 @@ def test_mw9_custom_pipeline_wip_and_hidden_remap(app, auth_client, project):
     auth_client.post(f"/api/projects/{pid}/members", json={"email": "bob@example.com", "permissions": ["view", "edit"]})
     bob = login(app, "u2:bob@example.com")
     assert bob.put(f"/api/projects/{pid}/pipeline", json={"stages": custom}).status_code == 403
+
+
+def test_mw10_external_webhooks_slack_discord_retry_and_logs(auth_client, project):
+    import hashlib
+    import hmac
+    import json
+
+    from app.services.webhooks import set_webhook_sender
+
+    pid = project["id"]
+    sent: list[tuple[str, bytes, dict[str, str]]] = []
+    fail_once = {"slack": True}
+
+    def fake_sender(url: str, raw: bytes, headers: dict[str, str]) -> int:
+        sent.append((url, raw, headers))
+        if "hooks.slack.com" in url and fail_once["slack"]:
+            fail_once["slack"] = False
+            return 500
+        return 200
+
+    set_webhook_sender(fake_sender)
+    try:
+        # 사설 IP / http 차단 확인
+        assert auth_client.post(f"/api/projects/{pid}/webhooks", json={"name": "bad", "url": "http://example.com/hook"}).status_code == 400
+        assert auth_client.post(f"/api/projects/{pid}/webhooks", json={"name": "ssrf", "url": "https://127.0.0.1/hook"}).status_code == 400
+
+        slack = auth_client.post(
+            f"/api/projects/{pid}/webhooks",
+            json={"name": "팀 슬랙", "url": "https://hooks.slack.com/services/T00/B00/XXX", "preset": "slack", "events": ["task.created", "due_soon"]},
+        )
+        assert slack.status_code == 201, slack.text
+        slack_id = slack.json()["id"]
+
+        custom = auth_client.post(
+            f"/api/projects/{pid}/webhooks",
+            json={"name": "커스텀 훅", "url": "https://example.com/mw-hook", "preset": "custom", "events": ["task.stage_changed"]},
+        )
+        assert custom.status_code == 201, custom.text
+        custom_secret = custom.json()["generated_secret"]
+        custom_id = custom.json()["id"]
+        assert custom_secret
+
+        # 1) 일감 생성 → Slack 1차 500 실패 후 재시도 200 성공
+        t = auth_client.post(
+            f"/api/projects/{pid}/tasks",
+            json={"title": "웹훅 검증", "due_date": (date.today() + timedelta(days=1)).isoformat()},
+        ).json()
+        logs = auth_client.get(f"/api/projects/{pid}/webhooks/{slack_id}/deliveries").json()
+        assert len(logs) == 1 and logs[0]["ok"] is True and logs[0]["attempts"] == 2
+        slack_body = json.loads(sent[-1][1])
+        assert "MW-1" in slack_body["text"]
+
+        # 2) 단계 이동 → Custom Webhook HMAC-SHA256 서명 확인
+        auth_client.patch(f"/api/projects/{pid}/tasks/{t['id']}", json={"stage": "in_progress"})
+        url, raw, headers = sent[-1]
+        assert url == "https://example.com/mw-hook"
+        expected_sig = "sha256=" + hmac.new(custom_secret.encode(), raw, hashlib.sha256).hexdigest()
+        assert headers["X-MightyWork-Signature-256"] == expected_sig
+        assert headers["X-MightyWork-Event"] == "task.stage_changed"
+
+        # 3) 테스트 발송 + 마감 임박 알림 트리거
+        test_res = auth_client.post(f"/api/projects/{pid}/webhooks/{custom_id}/test")
+        assert test_res.status_code == 200 and test_res.json()["ok"] is True
+        due_res = auth_client.post(f"/api/projects/{pid}/webhooks/check-due-soon")
+        assert due_res.status_code == 200 and due_res.json()["tasks"] == 1 and due_res.json()["dispatched"] == 1
+    finally:
+        set_webhook_sender(None)

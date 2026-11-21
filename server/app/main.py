@@ -27,6 +27,7 @@ from app.api.routes import (
     templates,
     users,
     views,
+    webhooks,
     wiki,
 )
 from app.core.config import Settings
@@ -103,6 +104,7 @@ def create_app(settings: Settings | None = None, db: Database | None = None) -> 
     api.include_router(knowledge.router)
     api.include_router(knowledge_base.router)
     api.include_router(github.router)
+    api.include_router(webhooks.router)
     api.include_router(events.router)
     api.include_router(export.router)
     api.include_router(importer.router)

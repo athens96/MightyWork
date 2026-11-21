@@ -8,6 +8,7 @@ from app.models.project import Project
 from app.models.user import User
 from app.services.access import project_related_users
 from app.services.events import publish_user_event
+from app.services.webhooks import dispatch_project_webhooks
 
 _CODE = re.compile(r"```.*?```|`[^`\n]*`", re.S)
 # @email@domain.com 또는 @이름/로컬파트 (앞이 단어 문자나 이메일 중간이 아닌 경우)
@@ -102,4 +103,14 @@ def notify_mentions(
         )
         if n is not None:
             created.append(n)
+    if created:
+        dispatch_project_webhooks(
+            db,
+            project,
+            event="mention",
+            title=title,
+            body=excerpt,
+            link=link,
+            extra={"mentioned_user_ids": [n.user_id for n in created]},
+        )
     return created

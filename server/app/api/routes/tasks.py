@@ -4,7 +4,7 @@ from typing import Literal
 from fastapi import APIRouter, HTTPException, Response, status
 from pydantic import BaseModel, Field
 
-from app.api.deps import AccessDep, CurrentUser, DbDep, ProjectDep, TaskDep, apply_patch, require
+from app.api.deps import AccessDep, CurrentUser, DbDep, ProjectDep, SettingsDep, TaskDep, apply_patch, require
 from app.db import Database
 from app.models.common import utcnow
 from app.models.member import Permission
@@ -33,6 +33,7 @@ from app.services.links import link_targets, norm_title, pages_by_title, project
 from app.services.notifications import notify_mentions, notify_user
 from app.services.projects import allocate_task_number
 from app.services.tasks import delete_task_cascade, record_changes, record_created
+from app.services.webhooks import dispatch_project_webhooks
 
 pipeline_router = APIRouter(tags=["tasks"])
 router = APIRouter(prefix="/projects/{project_id}/tasks", tags=["tasks"])
@@ -279,7 +280,7 @@ def list_tasks(
 
 
 @router.post("", response_model=TaskRead, status_code=status.HTTP_201_CREATED, dependencies=[require(Permission.CREATE)])
-def create_task(project: ProjectDep, body: TaskCreate, user: CurrentUser, db: DbDep) -> TaskRead:
+def create_task(project: ProjectDep, body: TaskCreate, user: CurrentUser, settings: SettingsDep, db: DbDep) -> TaskRead:
     _ensure_assignee_is_member(db, project, body.assignee_id)
     _validate_parent(db, project, None, body.parent_id)
     _validate_cycle(db, project, body.cycle_id)
@@ -316,6 +317,15 @@ def create_task(project: ProjectDep, body: TaskCreate, user: CurrentUser, db: Db
         summary=f"{key} {task.title} 생성",
     )
     publish_event(db, project.id, "task.created", {"task_id": task.id, "stage": task.stage.value})
+    dispatch_project_webhooks(
+        db,
+        project,
+        event="task.created",
+        title=f"새 일감 {key}: {task.title}",
+        body=f"작성자: {user.name or user.email} · 단계: {PIPELINE_LABELS[task.stage]}",
+        link=f"{settings.app_url.rstrip('/')}{link}",
+        extra={"task_id": task.id, "key": key, "stage": task.stage.value, "tags": task.tags},
+    )
     return _read(db, task, 0, (0, 0))
 
 
@@ -404,7 +414,7 @@ def get_task(task: TaskDep, db: DbDep) -> TaskRead:
 
 
 @router.patch("/{task_id}", response_model=TaskRead, dependencies=[require(Permission.EDIT)])
-def update_task(project: ProjectDep, task: TaskDep, body: TaskUpdate, user: CurrentUser, db: DbDep) -> TaskRead:
+def update_task(project: ProjectDep, task: TaskDep, body: TaskUpdate, user: CurrentUser, settings: SettingsDep, db: DbDep) -> TaskRead:
     if "assignee_id" in body.model_fields_set:
         _ensure_assignee_is_member(db, project, body.assignee_id)
     if "parent_id" in body.model_fields_set:
@@ -436,6 +446,16 @@ def update_task(project: ProjectDep, task: TaskDep, body: TaskUpdate, user: Curr
             link=link,
         )
     publish_event(db, project.id, "task.updated", {"task_id": updated.id, "stage": updated.stage.value})
+    if updated.stage != task.stage:
+        dispatch_project_webhooks(
+            db,
+            project,
+            event="task.stage_changed",
+            title=f"{key} '{updated.title}' 단계 이동: {PIPELINE_LABELS[task.stage]} → {PIPELINE_LABELS[updated.stage]}",
+            body=f"변경자: {user.name or user.email}",
+            link=f"{settings.app_url.rstrip('/')}{link}",
+            extra={"task_id": updated.id, "key": key, "from": task.stage.value, "stage": updated.stage.value, "tags": updated.tags},
+        )
     return _read(db, updated)
 
 

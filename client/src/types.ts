@@ -526,3 +526,31 @@ export interface GitHubLink {
   branch: string;
   updated_at: string;
 }
+
+export type WebhookPreset = "custom" | "slack" | "discord";
+
+export interface ProjectWebhook {
+  id: string;
+  project_id: string;
+  name: string;
+  url: string;
+  preset: WebhookPreset;
+  events: string[];
+  has_secret: boolean;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+  generated_secret?: string | null;
+}
+
+export interface WebhookDelivery {
+  id: string;
+  project_id: string;
+  webhook_id: string;
+  event: string;
+  status_code: number | null;
+  ok: boolean;
+  attempts: number;
+  error: string;
+  created_at: string;
+}

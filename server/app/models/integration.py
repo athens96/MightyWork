@@ -39,3 +39,60 @@ class GitHubLink(Entity):
     state: str  # open | merged | closed | pushed
     author: str = ""
     branch: str = ""
+
+
+WebhookPreset = Literal["custom", "slack", "discord"]
+WEBHOOK_EVENTS: tuple[str, ...] = ("task.created", "task.stage_changed", "comment.created", "mention", "due_soon")
+
+
+class ProjectWebhook(Entity):
+    project_id: str
+    name: str = Field(min_length=1, max_length=80)
+    url: str = Field(min_length=8, max_length=500)
+    preset: WebhookPreset = "custom"
+    events: list[str] = Field(default_factory=lambda: list(WEBHOOK_EVENTS))
+    secret: str = ""
+    enabled: bool = True
+    created_by: str
+
+
+class ProjectWebhookCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    url: str = Field(min_length=8, max_length=500)
+    preset: WebhookPreset = "custom"
+    events: list[str] = Field(default_factory=lambda: list(WEBHOOK_EVENTS))
+    secret: str | None = None
+    enabled: bool = True
+
+
+class ProjectWebhookUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=80)
+    url: str | None = Field(default=None, min_length=8, max_length=500)
+    preset: WebhookPreset | None = None
+    events: list[str] | None = None
+    secret: str | None = None
+    enabled: bool | None = None
+
+
+class ProjectWebhookRead(BaseModel):
+    id: str
+    project_id: str
+    name: str
+    url: str
+    preset: WebhookPreset
+    events: list[str]
+    has_secret: bool
+    enabled: bool
+    created_at: str
+    updated_at: str
+    generated_secret: str | None = None
+
+
+class WebhookDelivery(Entity):
+    project_id: str
+    webhook_id: str
+    event: str
+    status_code: int | None = None
+    ok: bool = False
+    attempts: int = 1
+    error: str = ""
