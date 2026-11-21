@@ -172,6 +172,24 @@ npm run dev                 # http://localhost:5174 (/api 는 8000 으로 프록
 GOOGLE_CLIENT_ID=... JWT_SECRET=$(python3 -c "import secrets; print(secrets.token_urlsafe(48))") docker compose up --build
 ```
 
+## 배포 (Oracle Cloud, MightyTrade 와 같은 VM)
+
+한 VM 의 nginx 가 도메인(`server_name`)으로 나눈다: `mightytrade.duckdns.org` → MightyTrade(127.0.0.1:5001), `mightywork.duckdns.org` → MightyWork(정적 빌드 + 127.0.0.1:8000). 웹 앱과 API·OAuth·MCP 가 같은 origin 이다.
+
+처음 한 번 (Ubuntu VM, 80/443 개방·nginx·certbot 은 MightyTrade 때 준비됨):
+
+1. DuckDNS 에서 `mightywork` 도메인을 VM 공인 IP 로 지정
+2. Node.js 20+ (kordoc), `uv` (`curl -LsSf https://astral.sh/uv/install.sh | sh`)
+3. `/opt/mighty-work` 에 git clone → `cd server && uv sync --frozen --no-dev` (Python 3.12 를 uv 가 받아 옴), `cd tools/kordoc && npm ci --omit=dev`
+4. `server/.env` (권한 600): `GOOGLE_CLIENT_ID`, 새 `JWT_SECRET`, `PUBLIC_URL`·`APP_URL`=`https://mightywork.duckdns.org`, `CORS_ORIGINS=["https://mightywork.duckdns.org"]`
+5. `deploy/mighty-work-api.service` → `/etc/systemd/system/`, `deploy/nginx.conf` → `/etc/nginx/sites-available/mighty-work` (+ `sites-enabled` 링크)
+6. `certbot --nginx -d mightywork.duckdns.org --redirect`
+7. 외부 설정: Google OAuth 클라이언트의 승인된 JavaScript 원본에 `https://mightywork.duckdns.org`
+
+업데이트: main 에 푸시한 뒤 `./scripts/deploy.sh`. 클라이언트는 로컬에서 빌드해 올리고(`client/.env` 의 `VITE_GOOGLE_CLIENT_ID` 사용), 서버는 git pull·의존성·재시작까지 한다. 접속 정보는 `deploy/.env.deploy`(git 제외)에 `DEPLOY_HOST`, `DEPLOY_KEY`, `DEPLOY_URL`.
+
+`server/.env` 와 `server/data/`(SQLite DB·첨부)는 서버에만 있다. MCP 주소는 `https://mightywork.duckdns.org/mcp`.
+
 ## DB 교체 방법
 1. `server/app/db/base.py` 의 `Repository` 를 구현하는 클래스 작성(예: `PostgresRepository`)
 2. `server/app/db/__init__.py` 의 `Database` 에 팩토리 추가
