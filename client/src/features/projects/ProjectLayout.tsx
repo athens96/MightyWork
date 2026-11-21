@@ -56,7 +56,7 @@ export function ProjectLayout() {
             <BoardIcon size={12} /> 일감
           </NavLink>
           <NavLink to="cycles">
-            <CalendarIcon size={12} /> 사이클
+            <CalendarIcon size={12} /> 계획
           </NavLink>
           <NavLink to="wiki">
             <DocIcon size={12} /> 위키

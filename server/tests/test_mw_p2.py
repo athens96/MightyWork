@@ -48,3 +48,36 @@ def test_mw11_triage_queue_decisions_and_external_intake(auth_client, client, pr
     declined = auth_client.post(f"/api/projects/{pid}/triage/{t3['id']}/decide", json={"action": "decline"})
     assert declined.status_code == 200 and declined.json()["triage_status"] == "declined"
     assert auth_client.get(f"/api/projects/{pid}/triage").json() == []
+
+
+def test_mw12_milestones_crud_progress_and_filtering(auth_client, project):
+    pid = project["id"]
+    today = date.today()
+    m = auth_client.post(
+        f"/api/projects/{pid}/milestones",
+        json={
+            "name": "v1.0 정식 출시",
+            "description": "P0/P1 핵심 기능 완료",
+            "start_date": today.isoformat(),
+            "target_date": (today + timedelta(days=30)).isoformat(),
+            "status": "active",
+        },
+    )
+    assert m.status_code == 201, m.text
+    mid = m.json()["id"]
+
+    t1 = auth_client.post(f"/api/projects/{pid}/tasks", json={"title": "일감 1", "stage": "done", "estimate": 3, "milestone_id": mid}).json()
+    t2 = auth_client.post(f"/api/projects/{pid}/tasks", json={"title": "일감 2", "stage": "done", "estimate": 5, "milestone_id": mid}).json()
+    t3 = auth_client.post(f"/api/projects/{pid}/tasks", json={"title": "일감 3", "stage": "in_progress", "estimate": 2, "milestone_id": mid}).json()
+    auth_client.post(f"/api/projects/{pid}/tasks", json={"title": "기타 일감"})
+
+    listed = auth_client.get(f"/api/projects/{pid}/milestones").json()
+    assert len(listed) == 1
+    assert listed[0]["total_tasks"] == 3 and listed[0]["done_tasks"] == 2 and listed[0]["in_progress_tasks"] == 1
+    assert listed[0]["progress_pct"] == 67 and listed[0]["done_points"] == 8 and listed[0]["total_points"] == 10
+
+    filtered = auth_client.get(f"/api/projects/{pid}/tasks", params={"milestone_id": mid}).json()
+    assert {t["id"] for t in filtered} == {t1["id"], t2["id"], t3["id"]}
+
+    assert auth_client.delete(f"/api/projects/{pid}/milestones/{mid}").status_code == 204
+    assert auth_client.get(f"/api/projects/{pid}/tasks/{t1['id']}").json()["milestone_id"] is None

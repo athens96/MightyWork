@@ -2,13 +2,14 @@ import { useState, type KeyboardEvent } from "react";
 import { Avatar } from "../../components/Avatar";
 import { CloseIcon, TrashIcon } from "../../components/icons";
 import { dueState, timeAgo } from "../../lib/time";
-import type { Cycle, PipelineStageInfo, Priority, Task, TaskUpdate, User } from "../../types";
+import type { Cycle, Milestone, PipelineStageInfo, Priority, Task, TaskUpdate, User } from "../../types";
 import { PRIORITY_LABEL, STAGE_TONE } from "./tones";
 
 interface Props {
   task: Task;
   stages: PipelineStageInfo[];
   cycles?: Cycle[];
+  milestones?: Milestone[];
   users: User[]; // 보고자 등 표시용
   assignees: User[]; // 작업자 후보 (프로젝트 멤버)
   readOnly: boolean; // 편집 권한 없음
@@ -18,7 +19,7 @@ interface Props {
 }
 
 /** 오른쪽 속성 사이드바 — 설정 행 패턴(이름 왼쪽, 컨트롤 오른쪽), 바꾸면 즉시 저장 */
-export function TaskProperties({ task, stages, cycles = [], users, assignees, readOnly, canDelete, onPatch, onDelete }: Props) {
+export function TaskProperties({ task, stages, cycles = [], milestones = [], users, assignees, readOnly, canDelete, onPatch, onDelete }: Props) {
   const [estimate, setEstimate] = useState(task.estimate?.toString() ?? "");
   const [tagDraft, setTagDraft] = useState("");
   const reporter = users.find((u) => u.id === task.created_by);
@@ -91,6 +92,20 @@ export function TaskProperties({ task, stages, cycles = [], users, assignees, re
               <option key={c.id} value={c.id}>
                 {c.status === "active" ? "● " : ""}
                 {c.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {milestones.length > 0 && (
+        <div className="prop">
+          <span className="prop-name">마일스톤</span>
+          <select className="prop-control" value={task.milestone_id ?? ""} onChange={(e) => onPatch({ milestone_id: e.target.value || null })}>
+            <option value="">미지정</option>
+            {milestones.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.name}
               </option>
             ))}
           </select>

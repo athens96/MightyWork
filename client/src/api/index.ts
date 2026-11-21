@@ -22,6 +22,9 @@ import type {
   LocalGraph,
   McpInfo,
   Member,
+  Milestone,
+  MilestoneCreate,
+  MilestoneUpdate,
   MyTask,
   NotificationItem,
   NotificationList,
@@ -142,6 +145,13 @@ export const cyclesApi = {
   remove: (projectId: string, id: string) => http.delete(`/projects/${projectId}/cycles/${id}`),
   complete: (projectId: string, id: string, body: { rollover?: boolean; next_cycle_id?: string | null } = {}) =>
     http.post<CycleCompleteResult>(`/projects/${projectId}/cycles/${id}/complete`, body),
+};
+
+export const milestonesApi = {
+  list: (projectId: string) => http.get<Milestone[]>(`/projects/${projectId}/milestones`),
+  create: (projectId: string, body: MilestoneCreate) => http.post<Milestone>(`/projects/${projectId}/milestones`, body),
+  update: (projectId: string, id: string, body: MilestoneUpdate) => http.patch<Milestone>(`/projects/${projectId}/milestones/${id}`, body),
+  remove: (projectId: string, id: string) => http.delete(`/projects/${projectId}/milestones/${id}`),
 };
 
 export const templatesApi = {

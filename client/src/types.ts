@@ -103,6 +103,37 @@ export interface CycleCompleteResult {
   rolled_over_count: number;
 }
 
+export type MilestoneStatus = "planned" | "active" | "completed";
+
+export interface Milestone {
+  id: string;
+  project_id: string;
+  name: string;
+  description: string;
+  start_date: string | null;
+  target_date: string | null;
+  status: MilestoneStatus;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+  total_tasks: number;
+  done_tasks: number;
+  in_progress_tasks: number;
+  total_points: number;
+  done_points: number;
+  progress_pct: number;
+}
+
+export interface MilestoneCreate {
+  name: string;
+  description?: string;
+  start_date?: string | null;
+  target_date?: string | null;
+  status?: MilestoneStatus;
+}
+
+export type MilestoneUpdate = Partial<MilestoneCreate>;
+
 export interface TaskTemplate {
   id: string;
   project_id: string;
@@ -134,6 +165,7 @@ export interface TaskBulkRequest {
   priority?: Priority;
   assignee_id?: string | null;
   cycle_id?: string | null;
+  milestone_id?: string | null;
   add_tags?: string[];
   remove_tags?: string[];
   delete?: boolean;
@@ -179,6 +211,7 @@ export interface Task {
   priority: Priority;
   parent_id: string | null;
   cycle_id: string | null;
+  milestone_id: string | null;
   assignee_id: string | null; // 작업자
   tags: string[]; // 레이블
   start_date: string | null; // YYYY-MM-DD
@@ -313,7 +346,7 @@ export interface Comment {
   updated_at: string;
 }
 
-export type TrackedField = "title" | "stage" | "priority" | "parent_id" | "cycle_id" | "assignee_id" | "start_date" | "due_date" | "estimate" | "tags";
+export type TrackedField = "title" | "stage" | "priority" | "parent_id" | "cycle_id" | "milestone_id" | "assignee_id" | "start_date" | "due_date" | "estimate" | "tags";
 
 export interface TaskActivity {
   id: string;

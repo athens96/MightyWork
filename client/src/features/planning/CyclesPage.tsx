@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { cyclesApi } from "../../api";
 import { PlusIcon, TrashIcon } from "../../components/icons";
 import { can as canDo } from "../../lib/permissions";
 import type { Cycle, CycleStatus } from "../../types";
 import { useCurrentProject } from "../projects/ProjectLayout";
+import { MilestonesSection } from "./MilestonesSection";
 
 const STATUS_META: Record<CycleStatus, { label: string; tone: string }> = {
   active: { label: "진행 중", tone: "tone-run" },
@@ -93,9 +94,11 @@ function BurndownChart({ cycle }: { cycle: Cycle }) {
   );
 }
 
-/** 프로젝트 사이클(스프린트) 관리 · 번다운 · 속도(Velocity) · 자동 이월 화면 */
+/** 프로젝트 계획 화면: 사이클(스프린트) + 마일스톤(릴리즈/로드맵) */
 export function CyclesPage() {
   const project = useCurrentProject();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTab = searchParams.get("tab") === "milestones" ? "milestones" : "cycles";
   const [cycles, setCycles] = useState<Cycle[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
@@ -194,6 +197,21 @@ export function CyclesPage() {
 
   return (
     <div className="cycles-page">
+      <div className="kb-bar" style={{ marginBottom: 12 }}>
+        <div className="segment">
+          <button aria-pressed={activeTab === "cycles"} onClick={() => setSearchParams({}, { replace: true })}>
+            사이클 · 스프린트
+          </button>
+          <button aria-pressed={activeTab === "milestones"} onClick={() => setSearchParams({ tab: "milestones" }, { replace: true })}>
+            마일스톤 · 로드맵
+          </button>
+        </div>
+      </div>
+
+      {activeTab === "milestones" ? (
+        <MilestonesSection project={project} />
+      ) : (
+        <>
       <section className="tiles">
         <div className="tile fill-run">
           <span className="tile-num">{activeCycles.length}</span>
@@ -382,6 +400,8 @@ export function CyclesPage() {
               })}
           </div>
         </section>
+      )}
+        </>
       )}
     </div>
   );

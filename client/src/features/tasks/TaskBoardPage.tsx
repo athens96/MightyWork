@@ -1,13 +1,13 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type DragEvent, type FormEvent } from "react";
 import { Link, Outlet, useMatch, useNavigate, useSearchParams } from "react-router-dom";
-import { cyclesApi, membersApi, pipelineApi, tasksApi, triageApi, usersApi, viewsApi } from "../../api";
+import { cyclesApi, membersApi, milestonesApi, pipelineApi, tasksApi, triageApi, usersApi, viewsApi } from "../../api";
 import { can as canDo } from "../../lib/permissions";
 import { useAuth } from "../../auth/AuthContext";
 import { PlusIcon } from "../../components/icons";
 import { TASK_CREATED_EVENT } from "../../components/QuickCreateModal";
 import { PROJECT_EVENT, subscribeSSE, type ProjectEventDetail, type SSEStatus } from "../../lib/sse";
 import { dueState } from "../../lib/time";
-import type { Cycle, Permission, PipelineStage, PipelineStageInfo, Priority, SavedView, Task, TaskBulkRequest, TaskUpdate, User } from "../../types";
+import type { Cycle, Milestone, Permission, PipelineStage, PipelineStageInfo, Priority, SavedView, Task, TaskBulkRequest, TaskUpdate, User } from "../../types";
 import { useCurrentProject } from "../projects/ProjectLayout";
 import type { BoardContext } from "./boardContext";
 import { TaskCard } from "./TaskCard";
@@ -43,6 +43,7 @@ export function TaskBoardPage() {
   const [members, setMembers] = useState<User[]>([]);
   const [savedViews, setSavedViews] = useState<SavedView[]>([]);
   const [cycles, setCycles] = useState<Cycle[]>([]);
+  const [milestones, setMilestones] = useState<Milestone[]>([]);
   const [triageCount, setTriageCount] = useState(0);
   const [newTitle, setNewTitle] = useState("");
   const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -58,6 +59,7 @@ export function TaskBoardPage() {
   const tag = params.get("tag") || "";
   const dueFilter = params.get("due") || "";
   const cycleFilter = params.get("cycle") || "";
+  const milestoneFilter = params.get("milestone") || "";
   const sort = (params.get("sort") as SortKey) || "number";
 
   const setParam = (key: string, val: string) => {
@@ -71,13 +73,14 @@ export function TaskBoardPage() {
   };
 
   const reload = useCallback(async () => {
-    const [p, t, u, m, v, c, tr] = await Promise.all([
+    const [p, t, u, m, v, c, ms, tr] = await Promise.all([
       pipelineApi.forProject(project.id),
       tasksApi.list(project.id),
       usersApi.listByProject(project.id),
       membersApi.list(project.id),
       viewsApi.list(project.id).catch(() => [] as SavedView[]),
       cyclesApi.list(project.id).catch(() => [] as Cycle[]),
+      milestonesApi.list(project.id).catch(() => [] as Milestone[]),
       triageApi.list(project.id).catch(() => [] as Task[]),
     ]);
     setStages(p);
@@ -86,6 +89,7 @@ export function TaskBoardPage() {
     setMembers(m.flatMap((x) => (x.user ? [x.user] : [])));
     setSavedViews(v);
     setCycles(c);
+    setMilestones(ms);
     setTriageCount(tr.filter((x) => x.triage_status === "pending").length);
   }, [project.id]);
 
@@ -167,6 +171,8 @@ export function TaskBoardPage() {
       }
       if (cycleFilter === "none" && t.cycle_id) return false;
       if (cycleFilter && cycleFilter !== "none" && t.cycle_id !== cycleFilter) return false;
+      if (milestoneFilter === "none" && t.milestone_id) return false;
+      if (milestoneFilter && milestoneFilter !== "none" && t.milestone_id !== milestoneFilter) return false;
       return true;
     });
     return [...filtered].sort((a, b) => {
@@ -180,10 +186,10 @@ export function TaskBoardPage() {
       }
       return a.number - b.number;
     });
-  }, [tasks, assignee, priority, tag, dueFilter, cycleFilter, sort, me?.id]);
+  }, [tasks, assignee, priority, tag, dueFilter, cycleFilter, milestoneFilter, sort, me?.id]);
 
   const count = (...s: PipelineStage[]) => visible.filter((t) => s.includes(t.stage)).length;
-  const hasFilters = assignee !== "all" || !!priority || !!tag || !!dueFilter || !!cycleFilter || sort !== "number";
+  const hasFilters = assignee !== "all" || !!priority || !!tag || !!dueFilter || !!cycleFilter || !!milestoneFilter || sort !== "number";
 
   const visibleStages = useMemo(() => {
     const active = stages.filter((s) => !s.hidden);
@@ -192,7 +198,7 @@ export function TaskBoardPage() {
 
   const can = (perm: Permission) => canDo(project, perm);
   const canEdit = can("edit");
-  const context: BoardContext = { project, tasks, stages: visibleStages, cycles, users, members, can, onCreated, onChanged, onDeleted };
+  const context: BoardContext = { project, tasks, stages: visibleStages, cycles, milestones, users, members, can, onCreated, onChanged, onDeleted };
 
   const patchTask = async (taskId: string, body: TaskUpdate) => {
     const current = tasks.find((t) => t.id === taskId);
@@ -229,6 +235,7 @@ export function TaskBoardPage() {
     if (tag) filters.tag = tag;
     if (dueFilter) filters.due = dueFilter;
     if (cycleFilter) filters.cycle = cycleFilter;
+    if (milestoneFilter) filters.milestone = milestoneFilter;
     if (sort !== "number") filters.sort = sort;
     const created = await viewsApi.create(project.id, { name: name.trim(), layout, filters });
     setSavedViews((prev) => [...prev, created]);
@@ -390,6 +397,17 @@ export function TaskBoardPage() {
               <option key={c.id} value={c.id}>
                 {c.status === "active" ? "● " : ""}
                 {c.name}
+              </option>
+            ))}
+          </select>
+        )}
+        {milestones.length > 0 && (
+          <select className="filter-select" value={milestoneFilter} onChange={(e) => setParam("milestone", e.target.value)} aria-label="마일스톤 필터">
+            <option value="">모든 마일스톤</option>
+            <option value="none">마일스톤 미지정</option>
+            {milestones.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.name}
               </option>
             ))}
           </select>

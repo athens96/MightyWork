@@ -3,7 +3,7 @@ from app.models.activity import TaskActivity
 from app.models.task import Task
 
 # 변경 이력에 남기는 필드 (설명·체크리스트는 잦은 편집으로 이력이 넘치므로 제외)
-TRACKED_FIELDS = ("title", "stage", "priority", "parent_id", "cycle_id", "assignee_id", "start_date", "due_date", "estimate", "tags")
+TRACKED_FIELDS = ("title", "stage", "priority", "parent_id", "cycle_id", "milestone_id", "assignee_id", "start_date", "due_date", "estimate", "tags")
 
 
 def record_created(db: Database, task: Task, actor_id: str) -> None:

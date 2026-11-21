@@ -20,6 +20,7 @@ from app.api.routes import (
     knowledge,
     knowledge_base,
     members,
+    milestones,
     notifications,
     oauth,
     projects,
@@ -99,6 +100,7 @@ def create_app(settings: Settings | None = None, db: Database | None = None) -> 
     api.include_router(templates.router)
     api.include_router(views.router)
     api.include_router(cycles.router)
+    api.include_router(milestones.router)
     api.include_router(comments.router)
     api.include_router(wiki.router)
     api.include_router(attachments.router)

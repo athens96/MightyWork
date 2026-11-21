@@ -1224,3 +1224,90 @@ mark { background: color-mix(in srgb, var(--wait) 35%, transparent); color: inhe
     grid-template-columns: 1fr 1fr;
   }
 }
+
+/* MW-12: 마일스톤 로드맵 타임라인 */
+.roadmap-card { padding: 14px 16px; margin-bottom: 14px; }
+.roadmap-axis {
+  display: grid;
+  grid-template-columns: 190px 1fr;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+}
+.roadmap-track-head { position: relative; height: 16px; }
+.roadmap-track-head > span {
+  position: absolute;
+  transform: translateX(-50%);
+  font-size: 10.5px;
+}
+.roadmap-track-head > span:first-child { transform: translateX(0); }
+.roadmap-track-head > span:last-child { transform: translateX(-100%); }
+.roadmap-rows { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.roadmap-row {
+  display: grid;
+  grid-template-columns: 190px 1fr;
+  align-items: center;
+  gap: 12px;
+}
+.roadmap-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow: hidden;
+}
+.roadmap-lane {
+  position: relative;
+  height: 28px;
+  border-radius: 7px;
+  background: var(--card-raised);
+  overflow: hidden;
+}
+.roadmap-today {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1.5px;
+  background: var(--err);
+  opacity: 0.7;
+  z-index: 2;
+}
+.roadmap-bar {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--run) 20%, var(--card));
+  border: 1px solid color-mix(in srgb, var(--run) 55%, var(--line));
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  text-decoration: none;
+  color: var(--ink);
+}
+.roadmap-bar.tone-done {
+  background: color-mix(in srgb, var(--done) 20%, var(--card));
+  border-color: color-mix(in srgb, var(--done) 55%, var(--line));
+}
+.roadmap-bar.tone-wait {
+  background: color-mix(in srgb, var(--wait) 18%, var(--card));
+  border-color: color-mix(in srgb, var(--wait) 50%, var(--line));
+}
+.roadmap-bar-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: color-mix(in srgb, var(--run) 28%, transparent);
+}
+.roadmap-bar.tone-done .roadmap-bar-fill {
+  background: color-mix(in srgb, var(--done) 30%, transparent);
+}
+.roadmap-bar-text {
+  position: relative;
+  z-index: 1;
+  padding: 0 7px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

@@ -56,6 +56,7 @@ class TaskBulkRequest(BaseModel):
     priority: Priority | None = None
     assignee_id: str | None = None
     cycle_id: str | None = None
+    milestone_id: str | None = None
     add_tags: list[str] | None = None
     remove_tags: list[str] | None = None
     delete: bool = False
@@ -219,6 +220,14 @@ def _validate_cycle(db: Database, project: Project, cycle_id: str | None) -> Non
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Cycle not found")
 
 
+def _validate_milestone(db: Database, project: Project, milestone_id: str | None) -> None:
+    if milestone_id is None:
+        return
+    m = db.milestones.get(milestone_id)
+    if m is None or m.project_id != project.id:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Milestone not found")
+
+
 def _validate_parent(db: Database, project: Project, task_id: str | None, parent_id: str | None) -> None:
     """상위 일감이 같은 프로젝트에 존재하는지, 순환이 생기지 않는지 확인."""
     current = parent_id
@@ -253,6 +262,7 @@ def list_tasks(
     assignee_id: str | None = None,
     parent_id: str | None = None,
     cycle_id: str | None = None,
+    milestone_id: str | None = None,
     include_triage: bool = False,
 ) -> list[TaskRead]:
     all_project_tasks = db.tasks.list(
@@ -272,6 +282,7 @@ def list_tasks(
         and (assignee_id is None or t.assignee_id == assignee_id)
         and (parent_id is None or t.parent_id == parent_id)
         and (cycle_id is None or t.cycle_id == cycle_id)
+        and (milestone_id is None or t.milestone_id == milestone_id)
     ]
     counts: dict[str, int] = {}
     for c in db.comments.list(lambda c: c.project_id == project.id):
@@ -287,6 +298,7 @@ def create_task(project: ProjectDep, body: TaskCreate, user: CurrentUser, settin
     _ensure_assignee_is_member(db, project, body.assignee_id)
     _validate_parent(db, project, None, body.parent_id)
     _validate_cycle(db, project, body.cycle_id)
+    _validate_milestone(db, project, body.milestone_id)
     number = allocate_task_number(db, project.id)
     task = db.tasks.create(Task(**body.model_dump(), project_id=project.id, number=number, created_by=user.id))
     record_created(db, task, user.id)
@@ -348,6 +360,8 @@ def bulk_update_tasks(
         _ensure_assignee_is_member(db, project, body.assignee_id)
     if "cycle_id" in body.model_fields_set:
         _validate_cycle(db, project, body.cycle_id)
+    if "milestone_id" in body.model_fields_set:
+        _validate_milestone(db, project, body.milestone_id)
 
     seen: set[str] = set()
     updated_reads: list[TaskRead] = []
@@ -376,6 +390,8 @@ def bulk_update_tasks(
             patch_data["assignee_id"] = body.assignee_id
         if "cycle_id" in body.model_fields_set:
             patch_data["cycle_id"] = body.cycle_id
+        if "milestone_id" in body.model_fields_set:
+            patch_data["milestone_id"] = body.milestone_id
         if body.add_tags or body.remove_tags:
             tags = list(task.tags)
             if body.remove_tags:
@@ -424,6 +440,8 @@ def update_task(project: ProjectDep, task: TaskDep, body: TaskUpdate, user: Curr
         _validate_parent(db, project, task.id, body.parent_id)
     if "cycle_id" in body.model_fields_set:
         _validate_cycle(db, project, body.cycle_id)
+    if "milestone_id" in body.model_fields_set:
+        _validate_milestone(db, project, body.milestone_id)
     updated = apply_patch(task, body)
     db.tasks.update(updated)
     record_changes(db, task, updated, user.id)

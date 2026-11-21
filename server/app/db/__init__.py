@@ -13,6 +13,7 @@ from app.models.cycle import Cycle
 from app.models.integration import GitHubIntegration, GitHubLink, ProjectIntake, ProjectWebhook, WebhookDelivery
 from app.models.knowledge import GlossaryTerm, KnowledgeEntity, KnowledgeRelation
 from app.models.member import ProjectMember
+from app.models.milestone import Milestone
 from app.models.notification import Notification
 from app.models.oauth import OAuthClient, OAuthGrant, RefreshToken
 from app.models.project import Project
@@ -32,6 +33,7 @@ _COLLECTIONS = (
     ("task_links", "task_links.json", TaskLink),
     ("saved_views", "saved_views.json", SavedView),
     ("cycles", "cycles.json", Cycle),
+    ("milestones", "milestones.json", Milestone),
     ("task_templates", "task_templates.json", TaskTemplate),
     ("project_pipelines", "project_pipelines.json", ProjectPipeline),
     ("comments", "comments.json", Comment),
@@ -74,6 +76,7 @@ class Database:
         task_links: Repository[TaskLink] | None = None,
         saved_views: Repository[SavedView] | None = None,
         cycles: Repository[Cycle] | None = None,
+        milestones: Repository[Milestone] | None = None,
         task_templates: Repository[TaskTemplate] | None = None,
         project_pipelines: Repository[ProjectPipeline] | None = None,
         wiki_revisions: Repository[WikiRevision] | None = None,
@@ -99,6 +102,7 @@ class Database:
         self.task_links = task_links or JsonFileRepository(base / "task_links.json", TaskLink)
         self.saved_views = saved_views or JsonFileRepository(base / "saved_views.json", SavedView)
         self.cycles = cycles or JsonFileRepository(base / "cycles.json", Cycle)
+        self.milestones = milestones or JsonFileRepository(base / "milestones.json", Milestone)
         self.task_templates = task_templates or JsonFileRepository(base / "task_templates.json", TaskTemplate)
         self.project_pipelines = project_pipelines or JsonFileRepository(base / "project_pipelines.json", ProjectPipeline)
         self.comments = comments

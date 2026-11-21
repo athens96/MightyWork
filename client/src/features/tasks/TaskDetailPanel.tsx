@@ -19,7 +19,7 @@ import { STAGE_TONE, TASK_LINK_LABEL } from "./tones";
 
 /** 일감 상세 — 오른쪽에서 열리는 패널 (/projects/:pid/tasks/:taskId) */
 export function TaskDetailPanel() {
-  const { project, tasks, stages, cycles, users, members, can, onCreated, onChanged, onDeleted } = useBoard();
+  const { project, tasks, stages, cycles, milestones, users, members, can, onCreated, onChanged, onDeleted } = useBoard();
   const editable = can("edit");
   const { taskId = "" } = useParams();
   const navigate = useNavigate();
@@ -588,6 +588,7 @@ export function TaskDetailPanel() {
               task={task}
               stages={stages}
               cycles={cycles}
+              milestones={milestones}
               users={users}
               assignees={members}
               readOnly={!editable}

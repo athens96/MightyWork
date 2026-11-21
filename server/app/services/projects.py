@@ -22,6 +22,7 @@ def delete_project_cascade(db: Database, project_id: str) -> bool:
             db.task_links,
             db.saved_views,
             db.cycles,
+            db.milestones,
             db.task_templates,
             db.project_pipelines,
             db.comments,

@@ -116,7 +116,7 @@ export function Layout() {
                     <BoardIcon size={13} /> 일감
                   </NavLink>
                   <NavLink to={`/projects/${p.id}/cycles`} className="side-sub">
-                    <CalendarIcon size={13} /> 사이클
+                    <CalendarIcon size={13} /> 사이클 · 로드맵
                   </NavLink>
                   <NavLink to={`/projects/${p.id}/wiki`} className="side-sub">
                     <DocIcon size={13} /> 위키

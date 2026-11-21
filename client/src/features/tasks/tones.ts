@@ -25,6 +25,7 @@ export const FIELD_LABEL: Record<string, string> = {
   priority: "우선순위",
   parent_id: "상위 일감",
   cycle_id: "사이클",
+  milestone_id: "마일스톤",
   assignee_id: "작업자",
   start_date: "시작일",
   due_date: "종료일",
