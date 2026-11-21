@@ -13,20 +13,47 @@ interface Props {
   stages: PipelineStageInfo[];
   usersById: Map<string, User>;
   canEdit: boolean;
+  selectedIds?: Set<string>;
+  onToggleSelect?: (taskId: string) => void;
+  onToggleAll?: (checked: boolean) => void;
   onMoveStage: (taskId: string, stage: PipelineStage) => void;
 }
 
-/** 일감 리스트(표) 뷰 — 백로그 대량 정리·스캔용 */
-export function TaskListView({ projectId, projectKey, tasks, stages, usersById, canEdit, onMoveStage }: Props) {
+/** 일감 리스트(표) 뷰 — 백로그 대량 정리·스캔·다중 선택용 */
+export function TaskListView({
+  projectId,
+  projectKey,
+  tasks,
+  stages,
+  usersById,
+  canEdit,
+  selectedIds,
+  onToggleSelect,
+  onToggleAll,
+  onMoveStage,
+}: Props) {
   if (tasks.length === 0) {
     return <div className="card empty">조건에 맞는 일감이 없습니다.</div>;
   }
+
+  const selectable = !!(canEdit && selectedIds && onToggleSelect && onToggleAll);
+  const allChecked = selectable && tasks.length > 0 && tasks.every((t) => selectedIds.has(t.id));
 
   return (
     <div className="card list-view-card">
       <table className="index-table task-list-table">
         <thead>
           <tr>
+            {selectable && (
+              <th style={{ width: 32 }}>
+                <input
+                  type="checkbox"
+                  checked={allChecked}
+                  onChange={(e) => onToggleAll(e.target.checked)}
+                  aria-label="전체 선택"
+                />
+              </th>
+            )}
             <th>키</th>
             <th>제목</th>
             <th>단계</th>
@@ -41,8 +68,19 @@ export function TaskListView({ projectId, projectKey, tasks, stages, usersById, 
             const assignee = t.assignee_id ? usersById.get(t.assignee_id) : undefined;
             const due = dueState(t.due_date, t.stage === "done");
             const prio = PRIORITY_META[t.priority];
+            const isChecked = selectable && selectedIds.has(t.id);
             return (
-              <tr key={t.id}>
+              <tr key={t.id} className={isChecked ? "is-checked" : undefined}>
+                {selectable && (
+                  <td className="nowrap">
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      onChange={() => onToggleSelect(t.id)}
+                      aria-label={`${projectKey}-${t.number} 선택`}
+                    />
+                  </td>
+                )}
                 <td className="nowrap">
                   <Link to={`/projects/${projectId}/tasks/${t.id}`} className={`key-badge ${STAGE_TONE[t.stage]}`}>
                     {projectKey}-{t.number}

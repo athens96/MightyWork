@@ -17,6 +17,7 @@ from app.models.notification import Notification
 from app.models.oauth import OAuthClient, OAuthGrant, RefreshToken
 from app.models.project import Project
 from app.models.task import Task, TaskLink
+from app.models.template import TaskTemplate
 from app.models.user import User
 from app.models.view import SavedView
 from app.models.wiki import WikiPage, WikiRevision
@@ -31,6 +32,7 @@ _COLLECTIONS = (
     ("task_links", "task_links.json", TaskLink),
     ("saved_views", "saved_views.json", SavedView),
     ("cycles", "cycles.json", Cycle),
+    ("task_templates", "task_templates.json", TaskTemplate),
     ("comments", "comments.json", Comment),
     ("task_activities", "task_activities.json", TaskActivity),
     ("wiki_pages", "wiki_pages.json", WikiPage),
@@ -68,6 +70,7 @@ class Database:
         task_links: Repository[TaskLink] | None = None,
         saved_views: Repository[SavedView] | None = None,
         cycles: Repository[Cycle] | None = None,
+        task_templates: Repository[TaskTemplate] | None = None,
         wiki_revisions: Repository[WikiRevision] | None = None,
         notifications: Repository[Notification] | None = None,
         audit_logs: Repository[AuditLog] | None = None,
@@ -88,6 +91,7 @@ class Database:
         self.task_links = task_links or JsonFileRepository(base / "task_links.json", TaskLink)
         self.saved_views = saved_views or JsonFileRepository(base / "saved_views.json", SavedView)
         self.cycles = cycles or JsonFileRepository(base / "cycles.json", Cycle)
+        self.task_templates = task_templates or JsonFileRepository(base / "task_templates.json", TaskTemplate)
         self.comments = comments
         self.task_activities = task_activities
         self.wiki_pages = wiki_pages

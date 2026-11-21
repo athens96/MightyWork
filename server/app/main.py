@@ -24,6 +24,7 @@ from app.api.routes import (
     oauth,
     projects,
     tasks,
+    templates,
     users,
     views,
     wiki,
@@ -92,6 +93,7 @@ def create_app(settings: Settings | None = None, db: Database | None = None) -> 
     api.include_router(members.router)
     api.include_router(tasks.pipeline_router)
     api.include_router(tasks.router)
+    api.include_router(templates.router)
     api.include_router(views.router)
     api.include_router(cycles.router)
     api.include_router(comments.router)

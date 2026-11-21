@@ -2,9 +2,11 @@ from datetime import date, timedelta
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Response, status
+from pydantic import BaseModel, Field
 
-from app.api.deps import CurrentUser, DbDep, ProjectDep, TaskDep, apply_patch, require
+from app.api.deps import AccessDep, CurrentUser, DbDep, ProjectDep, TaskDep, apply_patch, require
 from app.db import Database
+from app.models.common import utcnow
 from app.models.member import Permission
 from app.models.project import Project
 from app.models.task import (
@@ -42,6 +44,22 @@ _REVERSE_KIND = {
 class MyTaskRead(TaskRead):
     project_key: str
     project_name: str
+
+
+class TaskBulkRequest(BaseModel):
+    task_ids: list[str] = Field(min_length=1, max_length=200)
+    stage: PipelineStage | None = None
+    priority: Priority | None = None
+    assignee_id: str | None = None
+    cycle_id: str | None = None
+    add_tags: list[str] | None = None
+    remove_tags: list[str] | None = None
+    delete: bool = False
+
+
+class TaskBulkResult(BaseModel):
+    affected: int
+    tasks: list[TaskRead] = []
 
 
 _PRIO_ORDER = {Priority.URGENT: 0, Priority.HIGH: 1, Priority.MEDIUM: 2, Priority.LOW: 3}
@@ -221,6 +239,85 @@ def create_task(project: ProjectDep, body: TaskCreate, user: CurrentUser, db: Db
     )
     publish_event(db, project.id, "task.created", {"task_id": task.id, "stage": task.stage.value})
     return _read(db, task, 0, (0, 0))
+
+
+@router.post("/bulk", response_model=TaskBulkResult)
+def bulk_update_tasks(
+    access: AccessDep,
+    project: ProjectDep,
+    body: TaskBulkRequest,
+    user: CurrentUser,
+    db: DbDep,
+) -> TaskBulkResult:
+    """여러 일감의 단계·우선순위·작업자·사이클·레이블을 일괄 수정하거나 일괄 삭제한다."""
+    need = Permission.DELETE if body.delete else Permission.EDIT
+    if not access.can(need):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, f"Missing permission: {need.value}")
+    if "assignee_id" in body.model_fields_set:
+        _ensure_assignee_is_member(db, project, body.assignee_id)
+    if "cycle_id" in body.model_fields_set:
+        _validate_cycle(db, project, body.cycle_id)
+
+    seen: set[str] = set()
+    updated_reads: list[TaskRead] = []
+    affected = 0
+
+    for tid in body.task_ids:
+        if tid in seen:
+            continue
+        seen.add(tid)
+        task = db.tasks.get(tid)
+        if task is None or task.project_id != project.id:
+            continue
+
+        if body.delete:
+            delete_task_cascade(db, task.id)
+            publish_event(db, project.id, "task.deleted", {"task_id": task.id})
+            affected += 1
+            continue
+
+        patch_data: dict[str, object] = {}
+        if body.stage is not None:
+            patch_data["stage"] = body.stage
+        if body.priority is not None:
+            patch_data["priority"] = body.priority
+        if "assignee_id" in body.model_fields_set:
+            patch_data["assignee_id"] = body.assignee_id
+        if "cycle_id" in body.model_fields_set:
+            patch_data["cycle_id"] = body.cycle_id
+        if body.add_tags or body.remove_tags:
+            tags = list(task.tags)
+            if body.remove_tags:
+                rm = {t.strip() for t in body.remove_tags if t.strip()}
+                tags = [t for t in tags if t not in rm]
+            if body.add_tags:
+                for t in body.add_tags:
+                    clean = t.strip()
+                    if clean and clean not in tags:
+                        tags.append(clean)
+            patch_data["tags"] = tags
+
+        if not patch_data:
+            continue
+        patch_data["updated_at"] = utcnow()
+        updated = task.model_copy(update=patch_data)
+        db.tasks.update(updated)
+        record_changes(db, task, updated, user.id)
+        publish_event(db, project.id, "task.updated", {"task_id": updated.id, "stage": updated.stage.value})
+        updated_reads.append(_read(db, updated))
+        affected += 1
+
+    if affected:
+        record_audit(
+            db,
+            project_id=project.id,
+            actor_id=user.id,
+            action="task.bulk_deleted" if body.delete else "task.bulk_updated",
+            target_type="project",
+            target_id=project.id,
+            summary=f"일감 {affected}건 일괄 {'삭제' if body.delete else '편집'}",
+        )
+    return TaskBulkResult(affected=affected, tasks=updated_reads)
 
 
 @router.get("/{task_id}", response_model=TaskRead)

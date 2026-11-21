@@ -1075,3 +1075,67 @@ mark { background: color-mix(in srgb, var(--wait) 35%, transparent); color: inhe
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* MW-7: 다중 선택 체크박스 · 일괄 편집 바 · 템플릿 체크리스트 */
+.task-select-cb {
+  width: 13px;
+  height: 13px;
+  margin: 0 2px 0 0;
+  accent-color: var(--accent);
+  opacity: 0;
+  transition: opacity 0.12s ease;
+  cursor: pointer;
+}
+.task-card:hover .task-select-cb,
+.task-card.is-checked .task-select-cb,
+.task-select-cb:focus-visible {
+  opacity: 1;
+}
+.task-card.is-checked {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.task-list-table tr.is-checked td {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+.bulk-bar {
+  position: fixed;
+  left: 50%;
+  bottom: 20px;
+  transform: translateX(-50%);
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: var(--card);
+  border: 1px solid var(--accent);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.22);
+}
+.bulk-tag-input {
+  width: 96px;
+  height: 28px;
+  padding: 0 8px;
+  font-size: 12px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--page);
+  color: var(--ink);
+}
+.quick-tpl-check {
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--card-raised);
+  border: 1px solid var(--line);
+}
+.quick-tpl-check ul {
+  margin: 4px 0 0;
+  padding-left: 4px;
+  list-style: none;
+  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}

@@ -55,3 +55,56 @@ def test_mw6_cycles_crud_burndown_and_rollover(auth_client, project):
     # 완료된 일감은 c1 에 남고, 미완료 일감은 next_cycle 로 이동
     assert auth_client.get(f"/api/projects/{pid}/tasks/{t_done['id']}").json()["cycle_id"] == c1_id
     assert auth_client.get(f"/api/projects/{pid}/tasks/{t_open['id']}").json()["cycle_id"] == body["next_cycle"]["id"]
+
+
+def test_mw7_templates_and_bulk_edit(app, auth_client, project):
+    from tests.conftest import login
+
+    pid = project["id"]
+    # 1) 템플릿 CRUD
+    tpl = auth_client.post(
+        f"/api/projects/{pid}/task-templates",
+        json={
+            "name": "버그 제보",
+            "title_prefix": "[Bug] ",
+            "description": "### 재현 경로\n1. ",
+            "priority": "high",
+            "tags": ["bug", "triage"],
+            "checklist": ["재현 확인", "회귀 테스트 작성"],
+        },
+    )
+    assert tpl.status_code == 201, tpl.text
+    tid = tpl.json()["id"]
+    assert len(auth_client.get(f"/api/projects/{pid}/task-templates").json()) == 1
+
+    # 2) 일괄 편집 (단계·우선순위·작업자·레이블 추가)
+    t1 = auth_client.post(f"/api/projects/{pid}/tasks", json={"title": "일감 1"}).json()
+    t2 = auth_client.post(f"/api/projects/{pid}/tasks", json={"title": "일감 2", "tags": ["old"]}).json()
+
+    res = auth_client.post(
+        f"/api/projects/{pid}/tasks/bulk",
+        json={
+            "task_ids": [t1["id"], t2["id"]],
+            "stage": "todo",
+            "priority": "urgent",
+            "assignee_id": "u1",
+            "add_tags": ["sprint-1"],
+            "remove_tags": ["old"],
+        },
+    )
+    assert res.status_code == 200, res.text
+    data = res.json()
+    assert data["affected"] == 2
+    assert all(x["stage"] == "todo" and x["priority"] == "urgent" and x["assignee_id"] == "u1" for x in data["tasks"])
+    t2_after = next(x for x in data["tasks"] if x["id"] == t2["id"])
+    assert t2_after["tags"] == ["sprint-1"]
+
+    # 보기 전용 멤버는 일괄 편집 불가
+    auth_client.post(f"/api/projects/{pid}/members", json={"email": "bob@example.com", "permissions": ["view"]})
+    bob = login(app, "u2:bob@example.com")
+    assert bob.post(f"/api/projects/{pid}/tasks/bulk", json={"task_ids": [t1["id"]], "stage": "done"}).status_code == 403
+
+    # 일괄 삭제 + 템플릿 삭제
+    del_res = auth_client.post(f"/api/projects/{pid}/tasks/bulk", json={"task_ids": [t1["id"]], "delete": True})
+    assert del_res.status_code == 200 and del_res.json()["affected"] == 1
+    assert auth_client.delete(f"/api/projects/{pid}/task-templates/{tid}").status_code == 204

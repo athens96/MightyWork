@@ -40,9 +40,13 @@ import type {
   SearchHit,
   Task,
   TaskActivity,
+  TaskBulkRequest,
+  TaskBulkResult,
   TaskCreate,
   TaskLink,
   TaskLinkKind,
+  TaskTemplate,
+  TaskTemplateCreate,
   TaskUpdate,
   TokenResponse,
   UnlinkedMention,
@@ -133,6 +137,12 @@ export const cyclesApi = {
     http.post<CycleCompleteResult>(`/projects/${projectId}/cycles/${id}/complete`, body),
 };
 
+export const templatesApi = {
+  list: (projectId: string) => http.get<TaskTemplate[]>(`/projects/${projectId}/task-templates`),
+  create: (projectId: string, body: TaskTemplateCreate) => http.post<TaskTemplate>(`/projects/${projectId}/task-templates`, body),
+  remove: (projectId: string, id: string) => http.delete(`/projects/${projectId}/task-templates/${id}`),
+};
+
 export const tasksApi = {
   my: (params: { scope?: "assigned" | "created" | "all"; due_soon?: boolean; include_done?: boolean } = {}) => {
     const qs = new URLSearchParams();
@@ -150,6 +160,7 @@ export const tasksApi = {
   update: (projectId: string, id: string, body: TaskUpdate) =>
     http.patch<Task>(`/projects/${projectId}/tasks/${id}`, body),
   remove: (projectId: string, id: string) => http.delete(`/projects/${projectId}/tasks/${id}`),
+  bulk: (projectId: string, body: TaskBulkRequest) => http.post<TaskBulkResult>(`/projects/${projectId}/tasks/bulk`, body),
   subtasks: (projectId: string, id: string) => http.get<Task[]>(`/projects/${projectId}/tasks/${id}/subtasks`),
   links: (projectId: string, id: string) => http.get<TaskLink[]>(`/projects/${projectId}/tasks/${id}/links`),
   addLink: (projectId: string, id: string, targetId: string, kind: TaskLinkKind) =>

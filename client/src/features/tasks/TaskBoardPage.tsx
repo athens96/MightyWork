@@ -7,7 +7,7 @@ import { PlusIcon } from "../../components/icons";
 import { TASK_CREATED_EVENT } from "../../components/QuickCreateModal";
 import { PROJECT_EVENT, subscribeSSE, type ProjectEventDetail, type SSEStatus } from "../../lib/sse";
 import { dueState } from "../../lib/time";
-import type { Cycle, Permission, PipelineStage, PipelineStageInfo, Priority, SavedView, Task, TaskUpdate, User } from "../../types";
+import type { Cycle, Permission, PipelineStage, PipelineStageInfo, Priority, SavedView, Task, TaskBulkRequest, TaskUpdate, User } from "../../types";
 import { useCurrentProject } from "../projects/ProjectLayout";
 import type { BoardContext } from "./boardContext";
 import { TaskCard } from "./TaskCard";
@@ -47,6 +47,9 @@ export function TaskBoardPage() {
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dropStage, setDropStage] = useState<PipelineStage | null>(null);
   const [liveStatus, setLiveStatus] = useState<SSEStatus>("reconnecting");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const [bulkTag, setBulkTag] = useState("");
+  const [bulkBusy, setBulkBusy] = useState(false);
 
   const layout = (params.get("view") as ViewLayout) || "board";
   const assignee = params.get("assignee") || "all";
@@ -232,6 +235,43 @@ export function TaskBoardPage() {
     setSavedViews((prev) => prev.filter((x) => x.id !== v.id));
   };
 
+  const toggleSelect = useCallback((taskId: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(taskId)) next.delete(taskId);
+      else next.add(taskId);
+      return next;
+    });
+  }, []);
+
+  const toggleAllVisible = useCallback(
+    (checked: boolean) => {
+      setSelectedIds(checked ? new Set(visible.map((t) => t.id)) : new Set());
+    },
+    [visible],
+  );
+
+  const runBulk = async (patch: Omit<TaskBulkRequest, "task_ids">) => {
+    const ids = [...selectedIds];
+    if (ids.length === 0 || bulkBusy) return;
+    if (patch.delete && !confirm(`선택한 일감 ${ids.length}건을 삭제할까요?`)) return;
+    setBulkBusy(true);
+    try {
+      const res = await tasksApi.bulk(project.id, { task_ids: ids, ...patch });
+      if (patch.delete) {
+        const gone = new Set(ids);
+        setTasks((prev) => prev.filter((t) => !gone.has(t.id)));
+      } else if (res.tasks.length > 0) {
+        const byId = new Map(res.tasks.map((t) => [t.id, t]));
+        setTasks((prev) => prev.map((t) => byId.get(t.id) ?? t));
+      }
+      setSelectedIds(new Set());
+      setBulkTag("");
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
   return (
     <>
       <section className="tiles">
@@ -414,6 +454,8 @@ export function TaskBoardPage() {
                       assignee={task.assignee_id ? usersById.get(task.assignee_id) : undefined}
                       stages={stages}
                       selected={task.id === openTaskId}
+                      checked={selectedIds.has(task.id)}
+                      onToggleCheck={canEdit ? toggleSelect : undefined}
                       draggable={canEdit}
                       dragging={draggingId === task.id}
                       onDragStart={(e) => {
@@ -442,6 +484,9 @@ export function TaskBoardPage() {
           stages={stages}
           usersById={usersById}
           canEdit={canEdit}
+          selectedIds={selectedIds}
+          onToggleSelect={toggleSelect}
+          onToggleAll={toggleAllVisible}
           onMoveStage={moveStage}
         />
       )}
@@ -454,6 +499,102 @@ export function TaskBoardPage() {
           canEdit={canEdit}
           onPatchTask={patchTask}
         />
+      )}
+
+      {selectedIds.size > 0 && canEdit && (
+        <div className="bulk-bar" role="region" aria-label="일괄 편집">
+          <strong className="mono">{selectedIds.size}건 선택</strong>
+          <select
+            className="filter-select"
+            value=""
+            disabled={bulkBusy}
+            aria-label="일괄 단계 변경"
+            onChange={(e) => e.target.value && runBulk({ stage: e.target.value as PipelineStage })}
+          >
+            <option value="">단계 이동…</option>
+            {stages.map((s) => (
+              <option key={s.key} value={s.key}>
+                {s.label}
+              </option>
+            ))}
+          </select>
+          <select
+            className="filter-select"
+            value=""
+            disabled={bulkBusy}
+            aria-label="일괄 우선순위 변경"
+            onChange={(e) => e.target.value && runBulk({ priority: e.target.value as Priority })}
+          >
+            <option value="">우선순위…</option>
+            {(["urgent", "high", "medium", "low"] as Priority[]).map((p) => (
+              <option key={p} value={p}>
+                {PRIORITY_LABEL[p]}
+              </option>
+            ))}
+          </select>
+          <select
+            className="filter-select"
+            value=""
+            disabled={bulkBusy}
+            aria-label="일괄 작업자 배정"
+            onChange={(e) => {
+              if (!e.target.value) return;
+              runBulk({ assignee_id: e.target.value === "__none__" ? null : e.target.value });
+            }}
+          >
+            <option value="">작업자 배정…</option>
+            <option value="__none__">미지정으로 해제</option>
+            {members.map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.name || u.email}
+              </option>
+            ))}
+          </select>
+          {cycles.length > 0 && (
+            <select
+              className="filter-select"
+              value=""
+              disabled={bulkBusy}
+              aria-label="일괄 사이클 배정"
+              onChange={(e) => {
+                if (!e.target.value) return;
+                runBulk({ cycle_id: e.target.value === "__none__" ? null : e.target.value });
+              }}
+            >
+              <option value="">사이클…</option>
+              <option value="__none__">사이클 해제</option>
+              {cycles.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          )}
+          <form
+            className="row"
+            style={{ gap: 4 }}
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (bulkTag.trim()) runBulk({ add_tags: [bulkTag.trim()] });
+            }}
+          >
+            <input
+              className="bulk-tag-input"
+              value={bulkTag}
+              onChange={(e) => setBulkTag(e.target.value)}
+              placeholder="+ 레이블"
+              aria-label="일괄 레이블 추가"
+            />
+          </form>
+          {can("delete") && (
+            <button type="button" className="btn btn-sm btn-danger" disabled={bulkBusy} onClick={() => runBulk({ delete: true })}>
+              삭제
+            </button>
+          )}
+          <button type="button" className="btn btn-sm btn-ghost" onClick={() => setSelectedIds(new Set())}>
+            해제
+          </button>
+        </div>
       )}
 
       <Outlet context={context} />

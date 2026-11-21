@@ -13,6 +13,8 @@ interface Props {
   assignee: User | undefined;
   stages: PipelineStageInfo[];
   selected: boolean;
+  checked?: boolean;
+  onToggleCheck?: (taskId: string) => void;
   draggable?: boolean;
   dragging?: boolean;
   onDragStart?: (e: DragEvent<HTMLElement>) => void;
@@ -34,7 +36,7 @@ function firstLine(md: string): string | undefined {
  * 머리줄(톤 표시·키·활동 막대·상태·추정치) → 제목 → 미리보기(다음 할 일/설명) → 작업자·배지.
  * 진행 중이면 run 색 점선이 흐르는 외곽선 + 후광.
  */
-export function TaskCard({ task, taskKey, href, assignee, stages, selected, draggable, dragging, onDragStart, onDragEnd }: Props) {
+export function TaskCard({ task, taskKey, href, assignee, stages, selected, checked, onToggleCheck, draggable, dragging, onDragStart, onDragEnd }: Props) {
   const navigate = useNavigate();
   const priority = PRIORITY_META[task.priority];
   const running = task.stage === "in_progress";
@@ -46,7 +48,7 @@ export function TaskCard({ task, taskKey, href, assignee, stages, selected, drag
 
   return (
     <article
-      className={`task-card ${STAGE_TONE[task.stage]} ${running ? "is-running" : ""} ${selected ? "selected" : ""} ${dragging ? "is-dragging" : ""}`}
+      className={`task-card ${STAGE_TONE[task.stage]} ${running ? "is-running" : ""} ${selected ? "selected" : ""} ${checked ? "is-checked" : ""} ${dragging ? "is-dragging" : ""}`}
       role="button"
       tabIndex={0}
       draggable={draggable}
@@ -56,6 +58,16 @@ export function TaskCard({ task, taskKey, href, assignee, stages, selected, drag
       onKeyDown={(e) => e.key === "Enter" && navigate(href)}
     >
       <header className="task-head">
+        {onToggleCheck && (
+          <input
+            type="checkbox"
+            className="task-select-cb"
+            checked={!!checked}
+            aria-label={`${taskKey} 선택`}
+            onClick={(e) => e.stopPropagation()}
+            onChange={() => onToggleCheck(task.id)}
+          />
+        )}
         <span className="task-tint" />
         <span className="task-key">{taskKey}</span>
         {running && (

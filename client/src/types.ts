@@ -103,6 +103,47 @@ export interface CycleCompleteResult {
   rolled_over_count: number;
 }
 
+export interface TaskTemplate {
+  id: string;
+  project_id: string;
+  name: string;
+  title_prefix: string;
+  description: string;
+  stage: PipelineStage;
+  priority: Priority;
+  tags: string[];
+  checklist: string[];
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TaskTemplateCreate {
+  name: string;
+  title_prefix?: string;
+  description?: string;
+  stage?: PipelineStage;
+  priority?: Priority;
+  tags?: string[];
+  checklist?: string[];
+}
+
+export interface TaskBulkRequest {
+  task_ids: string[];
+  stage?: PipelineStage;
+  priority?: Priority;
+  assignee_id?: string | null;
+  cycle_id?: string | null;
+  add_tags?: string[];
+  remove_tags?: string[];
+  delete?: boolean;
+}
+
+export interface TaskBulkResult {
+  affected: number;
+  tasks: Task[];
+}
+
 export interface PipelineStageInfo {
   key: PipelineStage;
   label: string;

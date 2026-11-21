@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { githubApi, membersApi, projectsApi } from "../../api";
+import { githubApi, membersApi, projectsApi, templatesApi } from "../../api";
 import { ApiError } from "../../api/http";
 import { useAuth } from "../../auth/AuthContext";
 import { Avatar } from "../../components/Avatar";
 import { PlusIcon, TrashIcon } from "../../components/icons";
 import { can, normalize, PERMISSION_HINT, PERMISSION_LABEL, PERMISSIONS, PRESETS } from "../../lib/permissions";
 import { timeAgo } from "../../lib/time";
-import type { AuditLog, GitHubConfig, Member, Permission } from "../../types";
+import type { AuditLog, GitHubConfig, Member, Permission, Priority, TaskTemplate } from "../../types";
 import { useCurrentProject } from "./ProjectLayout";
 import { useProjects } from "./ProjectsContext";
 
@@ -28,6 +28,13 @@ export function MembersPage() {
   const [gh, setGh] = useState<GitHubConfig | null>(null);
   const [ghRepo, setGhRepo] = useState("");
   const [ghAuto, setGhAuto] = useState(true);
+  const [templates, setTemplates] = useState<TaskTemplate[]>([]);
+  const [tplName, setTplName] = useState("");
+  const [tplPrefix, setTplPrefix] = useState("");
+  const [tplPriority, setTplPriority] = useState<Priority>("medium");
+  const [tplTags, setTplTags] = useState("");
+  const [tplDesc, setTplDesc] = useState("");
+  const [tplCheck, setTplCheck] = useState("");
   const [tab, setTab] = useState<"members" | "integrations" | "audit">("members");
   const [email, setEmail] = useState("");
   const [preset, setPreset] = useState(1);
@@ -52,8 +59,47 @@ export function MembersPage() {
         setGhRepo(cfg.repo);
         setGhAuto(cfg.auto_transition);
       }, () => {});
+      templatesApi.list(project.id).then(setTemplates, () => {});
     }
   }, [tab, reloadLogs, project.id]);
+
+  const addTemplate = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!tplName.trim()) return;
+    setNotice(null);
+    setError(null);
+    try {
+      const created = await templatesApi.create(project.id, {
+        name: tplName.trim(),
+        title_prefix: tplPrefix,
+        priority: tplPriority,
+        tags: tplTags
+          .split(",")
+          .map((t) => t.trim())
+          .filter(Boolean),
+        description: tplDesc,
+        checklist: tplCheck
+          .split("\n")
+          .map((l) => l.trim())
+          .filter(Boolean),
+      });
+      setTemplates((prev) => [...prev, created]);
+      setTplName("");
+      setTplPrefix("");
+      setTplTags("");
+      setTplDesc("");
+      setTplCheck("");
+      setNotice(`일감 템플릿 '${created.name}' 을 추가했습니다.`);
+    } catch {
+      setError("템플릿 저장에 실패했습니다.");
+    }
+  };
+
+  const removeTemplate = async (tpl: TaskTemplate) => {
+    if (!confirm(`'${tpl.name}' 템플릿을 삭제할까요?`)) return;
+    await templatesApi.remove(project.id, tpl.id);
+    setTemplates((prev) => prev.filter((x) => x.id !== tpl.id));
+  };
 
   const saveGitHub = async (e: FormEvent, rotate = false) => {
     e.preventDefault();
@@ -269,6 +315,74 @@ export function MembersPage() {
                   시크릿 재발급
                 </button>
               )}
+            </div>
+          </form>
+
+          <form className="card mcp-connect" onSubmit={addTemplate}>
+            <h3>일감 템플릿 ({templates.length})</h3>
+            <p className="muted mcp-help">
+              단축키 <kbd>C</kbd> 빠른 생성 모달에서 템플릿을 선택하면 제목 접두어·설명·레이블·체크리스트가 자동으로 채워집니다.
+            </p>
+            {templates.length > 0 && (
+              <div className="rows" style={{ marginBottom: 10 }}>
+                {templates.map((tpl) => (
+                  <div key={tpl.id} className="row" style={{ justifyContent: "space-between" }}>
+                    <div>
+                      <strong>{tpl.name}</strong>
+                      {tpl.title_prefix && <code className="mono" style={{ marginLeft: 6 }}>{tpl.title_prefix}</code>}
+                      {tpl.tags.length > 0 && (
+                        <span className="muted" style={{ marginLeft: 8, fontSize: 11.5 }}>
+                          #{tpl.tags.join(" #")}
+                        </span>
+                      )}
+                      {tpl.checklist.length > 0 && (
+                        <span className="muted" style={{ marginLeft: 8, fontSize: 11.5 }}>
+                          체크리스트 {tpl.checklist.length}건
+                        </span>
+                      )}
+                    </div>
+                    <button type="button" className="icon-btn danger" onClick={() => removeTemplate(tpl)} title="템플릿 삭제">
+                      <TrashIcon size={13} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="cycle-form-grid">
+              <label>
+                <span>템플릿 이름</span>
+                <input value={tplName} onChange={(e) => setTplName(e.target.value)} placeholder="예: 버그 제보" required />
+              </label>
+              <label>
+                <span>제목 접두어</span>
+                <input value={tplPrefix} onChange={(e) => setTplPrefix(e.target.value)} placeholder="예: [Bug] " />
+              </label>
+              <label>
+                <span>기본 우선순위</span>
+                <select value={tplPriority} onChange={(e) => setTplPriority(e.target.value as Priority)}>
+                  <option value="urgent">긴급</option>
+                  <option value="high">높음</option>
+                  <option value="medium">보통</option>
+                  <option value="low">낮음</option>
+                </select>
+              </label>
+              <label>
+                <span>기본 레이블 (쉼표 구분)</span>
+                <input value={tplTags} onChange={(e) => setTplTags(e.target.value)} placeholder="bug, triage" />
+              </label>
+              <label style={{ gridColumn: "1 / -1" }}>
+                <span>기본 설명 (Markdown)</span>
+                <textarea rows={2} value={tplDesc} onChange={(e) => setTplDesc(e.target.value)} placeholder="### 재현 경로&#10;1. " />
+              </label>
+              <label style={{ gridColumn: "1 / -1" }}>
+                <span>기본 체크리스트 (줄바꿈으로 구분)</span>
+                <textarea rows={2} value={tplCheck} onChange={(e) => setTplCheck(e.target.value)} placeholder="재현 확인&#10;회귀 테스트 작성" />
+              </label>
+            </div>
+            <div className="row" style={{ justifyContent: "flex-end", marginTop: 8 }}>
+              <button type="submit" className="btn btn-primary" disabled={!tplName.trim()}>
+                <PlusIcon size={11} /> 템플릿 추가
+              </button>
             </div>
           </form>
         </div>
