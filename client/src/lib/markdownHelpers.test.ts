@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyMarkdownFormat, extractHeadings, parseCalloutHeader } from "./markdownHelpers";
+import { applyMarkdownFormat, extractHeadings, parseCalloutHeader, parseToggleHeader } from "./markdownHelpers";
 
 describe("extractHeadings", () => {
   it("코드 펜스 내부의 # 주석은 무시하고 H1~H3 목차와 고유 ID를 생성한다", () => {
@@ -51,5 +51,21 @@ describe("applyMarkdownFormat", () => {
 
     const ck = applyMarkdownFormat("작업 A\n작업 B", 0, 9, "checklist");
     expect(ck.next).toBe("- [ ] 작업 A\n- [ ] 작업 B");
+
+    const tg = applyMarkdownFormat("세부 내용", 0, 5, "toggle");
+    expect(tg.next).toBe("> [!TOGGLE] 자세히 보기\n> 세부 내용");
+  });
+});
+
+describe("parseToggleHeader", () => {
+  it("접힘([!TOGGLE]) 및 기본 펼침([!TOGGLE+]) 토글 블록을 파싱한다", () => {
+    const closed = parseToggleHeader("[!TOGGLE] 실행 로그\n첫 줄");
+    expect(closed).toEqual({ open: false, title: "실행 로그", rest: "첫 줄" });
+
+    const opened = parseToggleHeader("[!TOGGLE+] 요약\n내용");
+    expect(opened).toEqual({ open: true, title: "요약", rest: "내용" });
+
+    expect(parseToggleHeader("[!TOGGLE]\n제목 없음")?.title).toBe("세부 내용 보기");
+    expect(parseToggleHeader("[!NOTE] 일반 콜아웃")).toBeNull();
   });
 });

@@ -16,6 +16,7 @@ const BUTTONS: { action: MarkdownFormatAction; label: string; title: string }[] 
   { action: "checklist", label: "체크", title: "체크리스트 (- [ ])" },
   { action: "table", label: "표", title: "마크다운 표 삽입" },
   { action: "callout", label: "콜아웃", title: "콜아웃 블록 (> [!NOTE])" },
+  { action: "toggle", label: "토글", title: "접이식 토글 블록 (> [!TOGGLE])" },
   { action: "link", label: "링크", title: "링크 ([텍스트](url))" },
   { action: "hr", label: "구분선", title: "구분선 (---)" },
 ];

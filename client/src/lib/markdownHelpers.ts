@@ -21,6 +21,7 @@ export const CALLOUT_META: Record<CalloutKind, CalloutMeta> = {
 };
 
 const CALLOUT_RE = /^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\](?:[ \t]+([^\n]*))?(?:\n([\s\S]*))?$/i;
+const TOGGLE_RE = /^\[!TOGGLE(\+)?\](?:[ \t]+([^\n]*))?(?:\n([\s\S]*))?$/i;
 
 /** 콜아웃 마커([!NOTE] 등) 파싱 */
 export function parseCalloutHeader(text: string): { meta: CalloutMeta; customTitle: string; rest: string } | null {
@@ -30,6 +31,17 @@ export function parseCalloutHeader(text: string): { meta: CalloutMeta; customTit
   return {
     meta: CALLOUT_META[kind],
     customTitle: (m[2] ?? "").trim(),
+    rest: m[3] ?? "",
+  };
+}
+
+/** 접이식 토글 블록([!TOGGLE] / [!TOGGLE+]) 파싱 */
+export function parseToggleHeader(text: string): { title: string; open: boolean; rest: string } | null {
+  const m = TOGGLE_RE.exec(text.trimStart());
+  if (!m) return null;
+  return {
+    open: m[1] === "+",
+    title: (m[2] ?? "").trim() || "세부 내용 보기",
     rest: m[3] ?? "",
   };
 }
@@ -101,6 +113,7 @@ export type MarkdownFormatAction =
   | "checklist"
   | "table"
   | "callout"
+  | "toggle"
   | "link"
   | "hr";
 
@@ -157,6 +170,14 @@ export function applyMarkdownFormat(
     case "callout": {
       const inner = selected || "중요한 참고 내용을 입력하세요.";
       const prefix = `${needLeadingNl}> [!NOTE]\n> `;
+      const body = inner.split("\n").join("\n> ");
+      const next = before + prefix + body + after;
+      const s = before.length + prefix.length;
+      return { next, selStart: s, selEnd: s + body.length };
+    }
+    case "toggle": {
+      const inner = selected || "세부 내용을 입력하세요.";
+      const prefix = `${needLeadingNl}> [!TOGGLE] 자세히 보기\n> `;
       const body = inner.split("\n").join("\n> ");
       const next = before + prefix + body + after;
       const s = before.length + prefix.length;

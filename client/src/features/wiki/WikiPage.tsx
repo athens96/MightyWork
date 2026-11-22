@@ -59,6 +59,7 @@ export function WikiPage() {
   const [importing, setImporting] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
+  const [focusMode, setFocusMode] = useState(false);
   const [tplOpen, setTplOpen] = useState(false);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [selectionPop, setSelectionPop] = useState<{ text: string; top: number; left: number } | null>(null);
@@ -271,6 +272,21 @@ export function WikiPage() {
     }
   }, [page?.id, page?.updated_at, draftKey, canEdit]);
 
+  useEffect(() => {
+    document.body.classList.toggle("mw-focus-mode", focusMode);
+    return () => document.body.classList.remove("mw-focus-mode");
+  }, [focusMode]);
+
+  useEffect(() => {
+    if (!focusMode) return;
+    const onKey = (e: KeyboardEvent) => {
+      const typing = e.target instanceof HTMLElement && e.target.closest("input, textarea, select, [contenteditable='true']");
+      if (!typing && e.key === "Escape") setFocusMode(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [focusMode]);
+
   const startEdit = () => {
     if (!page) return;
     setDraft(toDraft(page));
@@ -390,7 +406,7 @@ export function WikiPage() {
   };
 
   return (
-    <div className="wiki">
+    <div className={`wiki ${focusMode ? "is-focus" : ""}`}>
       <aside className={`pane wiki-nav ${pageId && !navOpen ? "is-collapsed-mobile" : ""}`}>
         <div className="pane-header">
           <span className="pane-title">페이지 {pages.length}</span>
@@ -494,6 +510,15 @@ export function WikiPage() {
                 }
               >
                 <StarIcon size={13} filled={isPagePinned} />
+              </button>
+              <button
+                type="button"
+                className={`btn btn-sm ${focusMode ? "btn-accent" : "btn-ghost"}`}
+                aria-pressed={focusMode}
+                onClick={() => setFocusMode((f) => !f)}
+                title={focusMode ? "집중 보기 해제 (Esc)" : "사이드바와 트리를 접고 문서에 집중"}
+              >
+                {focusMode ? "집중 해제" : "집중 보기"}
               </button>
               <ExportMenu projectId={project.id} pageId={page.id} hasChildren={pages.some((p) => p.parent_id === page.id)} />
               <button className="btn btn-sm" onClick={() => setHistoryOpen(true)} title="버전 히스토리">
@@ -854,6 +879,15 @@ export function WikiPage() {
                   />
                 </>
               )}
+              <button
+                type="button"
+                className={`btn btn-sm ${focusMode ? "btn-accent" : "btn-ghost"}`}
+                aria-pressed={focusMode}
+                onClick={() => setFocusMode((f) => !f)}
+                title="사이드바와 트리를 접고 편집에 집중"
+              >
+                {focusMode ? "집중 해제" : "집중 보기"}
+              </button>
               <button className="btn btn-ghost" onClick={cancelEdit}>
                 취소
               </button>

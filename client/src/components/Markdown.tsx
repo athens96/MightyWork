@@ -5,7 +5,7 @@ import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import "highlight.js/styles/github-dark.css";
 import { requestFile } from "../api/http";
-import { parseCalloutHeader, slugifyHeading, type HeadingItem } from "../lib/markdownHelpers";
+import { parseCalloutHeader, parseToggleHeader, slugifyHeading, type HeadingItem } from "../lib/markdownHelpers";
 import { hasTaskKey } from "../lib/wikiToTask";
 import { MISSING_PREFIX, remarkWikiLinks, type LinkResolver } from "../lib/wikilinks";
 
@@ -58,6 +58,23 @@ function renderBlockquote(children: ReactNode) {
       const pKids = Array.isArray(firstEl.props.children) ? firstEl.props.children : [firstEl.props.children];
       const firstStr = pKids[0];
       if (typeof firstStr === "string") {
+        const toggle = parseToggleHeader(firstStr);
+        if (toggle) {
+          const restFirstP = [toggle.rest, ...pKids.slice(1)].filter((x) => x !== "" && x !== undefined && x !== null);
+          const updatedFirstP = restFirstP.length > 0 ? cloneElement(firstEl, { key: "toggle-p0" }, restFirstP) : null;
+          const tail = list.slice(firstIdx + 1);
+          return (
+            <details className="md-toggle" open={toggle.open}>
+              <summary>{toggle.title}</summary>
+              {(updatedFirstP || tail.length > 0) && (
+                <div className="md-toggle-body">
+                  {updatedFirstP}
+                  {tail}
+                </div>
+              )}
+            </details>
+          );
+        }
         const parsed = parseCalloutHeader(firstStr);
         if (parsed) {
           const restFirstP = [parsed.rest, ...pKids.slice(1)].filter((x) => x !== "" && x !== undefined && x !== null);
