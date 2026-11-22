@@ -54,17 +54,17 @@ def search(db: Database, project: Project, query: str, limit: int = 30) -> list[
         task_ids, wiki_ids = candidates
         if key_match:
             target_num = int(key_match.group(1))
-            for t in db.tasks.list(lambda t: t.project_id == project.id and t.number == target_num):
+            for t in db.tasks.list(lambda t: t.project_id == project.id and t.deleted_at is None and t.number == target_num):
                 task_ids.add(t.id)
-        tasks = [t for tid in task_ids if (t := db.tasks.get(tid)) is not None and t.project_id == project.id]
-        pages = [p for pid in wiki_ids if (p := db.wiki_pages.get(pid)) is not None and p.project_id == project.id]
+        tasks = [t for tid in task_ids if (t := db.tasks.get(tid)) is not None and t.project_id == project.id and t.deleted_at is None]
+        pages = [p for pid in wiki_ids if (p := db.wiki_pages.get(pid)) is not None and p.project_id == project.id and p.deleted_at is None]
         comments_by_task: dict[str, list[str]] = {}
         if task_ids:
             for c in db.comments.list(lambda c: c.project_id == project.id and c.task_id in task_ids):
                 comments_by_task.setdefault(c.task_id, []).append(c.body)
     else:
-        tasks = db.tasks.list(lambda t: t.project_id == project.id)
-        pages = db.wiki_pages.list(lambda p: p.project_id == project.id)
+        tasks = db.tasks.list(lambda t: t.project_id == project.id and t.deleted_at is None)
+        pages = db.wiki_pages.list(lambda p: p.project_id == project.id and p.deleted_at is None)
         comments_by_task = {}
         for c in db.comments.list(lambda c: c.project_id == project.id):
             comments_by_task.setdefault(c.task_id, []).append(c.body)

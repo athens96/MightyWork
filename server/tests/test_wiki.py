@@ -140,8 +140,8 @@ def test_wiki_comments_crud_resolve_and_cascade_delete(app, auth_client, project
     assert auth_client.delete(f"{cbase}/{c['id']}").status_code == 204
     assert len(auth_client.get(cbase).json()) == 1
 
-    # 페이지 삭제 시 남은 위키 댓글도 함께 정리
-    assert auth_client.delete(f"{base}/{p['id']}").status_code == 204
+    # 페이지 영구 삭제 시 남은 위키 댓글도 함께 정리
+    assert auth_client.delete(f"{base}/{p['id']}", params={"permanent": True}).status_code == 204
     assert app.state.db.wiki_comments.get(c2["id"]) is None
 
 

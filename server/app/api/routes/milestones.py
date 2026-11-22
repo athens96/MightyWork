@@ -39,7 +39,7 @@ def _build_read(m: Milestone, all_tasks: list[Task]) -> MilestoneRead:
 @router.get("", response_model=list[MilestoneRead])
 def list_milestones(project: ProjectDep, db: DbDep) -> list[MilestoneRead]:
     items = db.milestones.list(lambda m: m.project_id == project.id)
-    all_tasks = db.tasks.list(lambda t: t.project_id == project.id)
+    all_tasks = db.tasks.list(lambda t: t.project_id == project.id and t.deleted_at is None)
     items.sort(key=lambda m: (_STATUS_ORDER[m.status], m.target_date is None, m.target_date or date.max, m.created_at))
     return [_build_read(m, all_tasks) for m in items]
 
@@ -68,7 +68,7 @@ def update_milestone(project: ProjectDep, milestone_id: str, body: MilestoneUpda
     updated = apply_patch(m, body)
     db.milestones.update(updated)
     publish_event(db, project.id, "milestone.updated", {"milestone_id": updated.id})
-    all_tasks = db.tasks.list(lambda t: t.project_id == project.id)
+    all_tasks = db.tasks.list(lambda t: t.project_id == project.id and t.deleted_at is None)
     return _build_read(updated, all_tasks)
 
 

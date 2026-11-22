@@ -67,6 +67,9 @@ export function ProjectLayout() {
           <NavLink to="members">
             <UsersIcon size={12} /> 멤버
           </NavLink>
+          <NavLink to="trash" title="삭제된 일감·위키 복구 (30일 보관)">
+            <TrashIcon size={12} /> 휴지통
+          </NavLink>
         </nav>
         {project.is_owner && (
           <button className="icon-btn danger" onClick={remove} title="프로젝트 삭제 (소유자만)">

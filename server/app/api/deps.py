@@ -96,9 +96,9 @@ def require(perm: Permission):
 
 
 def get_task(task_id: str, project: ProjectDep, db: DbDep) -> Task:
-    """경로의 {task_id} 를 현재 프로젝트의 일감으로 변환. 다른 프로젝트 일감이면 404."""
+    """경로의 {task_id} 를 현재 프로젝트의 활성 일감으로 변환. 없거나 휴지통/다른 프로젝트 일감이면 404."""
     task = db.tasks.get(task_id)
-    if task is None or task.project_id != project.id:
+    if task is None or task.project_id != project.id or task.deleted_at is not None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
     return task
 

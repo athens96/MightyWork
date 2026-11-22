@@ -394,7 +394,7 @@ export function WikiPage() {
   };
 
   const remove = async () => {
-    if (!page || !confirm(`"${page.title}" 페이지를 삭제할까요?`)) return;
+    if (!page || !confirm(`"${page.title}" 페이지를 휴지통으로 옮길까요?\n30일 이내에 휴지통에서 복구할 수 있습니다.`)) return;
     try {
       await wikiApi.remove(project.id, page.id);
       removeBookmark("wiki", page.id);

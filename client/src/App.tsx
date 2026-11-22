@@ -12,6 +12,7 @@ import { ProjectListPage } from "./features/projects/ProjectListPage";
 import { ProjectLayout } from "./features/projects/ProjectLayout";
 import { MembersPage } from "./features/projects/MembersPage";
 import { SearchPage } from "./features/projects/SearchPage";
+import { TrashPage } from "./features/projects/TrashPage";
 import { TaskBoardPage, TaskDetailRoute } from "./features/tasks/TaskBoardPage";
 import { TriagePage } from "./features/tasks/TriagePage";
 import { MyTasksPage } from "./features/tasks/MyTasksPage";
@@ -61,6 +62,7 @@ export default function App() {
             <Route path="wiki" element={wikiElement} />
             <Route path="knowledge" element={knowledgeElement} />
             <Route path="members" element={<MembersPage />} />
+            <Route path="trash" element={<TrashPage />} />
             <Route path="search" element={<SearchPage />} />
             <Route path="wiki/:pageId" element={wikiElement} />
           </Route>

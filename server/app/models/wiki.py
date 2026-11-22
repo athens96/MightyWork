@@ -58,6 +58,8 @@ class WikiPage(Entity, WikiPageBase):
     project_id: str
     created_by: str
     updated_by: str
+    deleted_at: datetime | None = None  # 휴지통 이동 시각 (None 이면 활성)
+    deleted_by: str | None = None
 
 
 class WikiPageCreate(WikiPageBase):

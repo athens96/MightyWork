@@ -100,7 +100,7 @@ def _get_cycle(db: Database, project_id: str, cycle_id: str) -> Cycle:
 @router.get("", response_model=list[CycleRead])
 def list_cycles(project: ProjectDep, db: DbDep) -> list[CycleRead]:
     cycles = db.cycles.list(lambda c: c.project_id == project.id)
-    all_tasks = db.tasks.list(lambda t: t.project_id == project.id)
+    all_tasks = db.tasks.list(lambda t: t.project_id == project.id and t.deleted_at is None)
     cycles.sort(key=lambda c: (_STATUS_ORDER[c.status], c.start_date if c.status != "completed" else date.max - (c.end_date - date.min)))
     return [_build_read(db, c, all_tasks) for c in cycles]
 
@@ -118,7 +118,7 @@ def create_cycle(project: ProjectDep, body: CycleCreate, user: CurrentUser, db: 
         summary=f"사이클 '{cycle.name}' 생성 ({cycle.start_date} ~ {cycle.end_date})",
     )
     publish_event(db, project.id, "cycle.updated", {"cycle_id": cycle.id})
-    all_tasks = db.tasks.list(lambda t: t.project_id == project.id)
+    all_tasks = db.tasks.list(lambda t: t.project_id == project.id and t.deleted_at is None)
     return _build_read(db, cycle, all_tasks)
 
 
@@ -128,7 +128,7 @@ def update_cycle(project: ProjectDep, cycle_id: str, body: CycleUpdate, db: DbDe
     updated = apply_patch(cycle, body)
     db.cycles.update(updated)
     publish_event(db, project.id, "cycle.updated", {"cycle_id": updated.id})
-    all_tasks = db.tasks.list(lambda t: t.project_id == project.id)
+    all_tasks = db.tasks.list(lambda t: t.project_id == project.id and t.deleted_at is None)
     return _build_read(db, updated, all_tasks)
 
 
@@ -159,7 +159,7 @@ def complete_cycle(project: ProjectDep, cycle_id: str, body: CycleCompleteReques
     db.cycles.update(completed)
 
     incomplete = db.tasks.list(
-        lambda t: t.project_id == project.id and t.cycle_id == cycle.id and t.stage != PipelineStage.DONE
+        lambda t: t.project_id == project.id and t.deleted_at is None and t.cycle_id == cycle.id and t.stage != PipelineStage.DONE
     )
     next_cycle: Cycle | None = None
     rolled = 0
@@ -215,7 +215,7 @@ def complete_cycle(project: ProjectDep, cycle_id: str, body: CycleCompleteReques
         summary=f"사이클 '{cycle.name}' 완료 (미완료 {rolled}건 이월)",
     )
     publish_event(db, project.id, "cycle.updated", {"cycle_id": cycle.id})
-    all_tasks = db.tasks.list(lambda t: t.project_id == project.id)
+    all_tasks = db.tasks.list(lambda t: t.project_id == project.id and t.deleted_at is None)
     return CycleCompleteResult(
         completed=_build_read(db, completed, all_tasks),
         next_cycle=_build_read(db, next_cycle, all_tasks) if next_cycle else None,

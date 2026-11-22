@@ -129,14 +129,14 @@ def build_mcp(settings: Settings, db: Database) -> MCPServer:
         num = ref.rsplit("-", 1)[-1] if "-" in ref else ref
         if not num.isdigit() or ("-" in ref and ref.rsplit("-", 1)[0].casefold() != p.key.casefold()):
             raise ToolError(f"일감 키 형식이 잘못되었습니다: {ref} (예: {p.key}-12)")
-        found = db.tasks.list(lambda t: t.project_id == p.id and t.number == int(num))
+        found = db.tasks.list(lambda t: t.project_id == p.id and t.deleted_at is None and t.number == int(num))
         if not found:
             raise ToolError(f"일감 {p.key}-{num} 을 찾을 수 없습니다")
         return found[0]
 
     def find_page(p: Project, ref: str) -> WikiPage:
         page = db.wiki_pages.get(ref)
-        if page is not None and page.project_id == p.id:
+        if page is not None and page.project_id == p.id and page.deleted_at is None:
             return page
         page = pages_by_title(project_pages(db, p)).get(norm_title(ref))
         if page is None:
@@ -264,6 +264,7 @@ def build_mcp(settings: Settings, db: Database) -> MCPServer:
         tasks = sorted(
             db.tasks.list(
                 lambda t: t.project_id == a.project.id
+                and t.deleted_at is None
                 and (stage is None or t.stage == stage)
                 and (ver_cf is None or (t.version or "").casefold() == ver_cf)
                 and (cycle_id is None or t.cycle_id == cycle_id)
@@ -279,7 +280,7 @@ def build_mcp(settings: Settings, db: Database) -> MCPServer:
     def list_cycles(project: str, status: CycleStatus | None = None) -> list[dict[str, Any]]:
         """프로젝트의 사이클(스프린트) 목록과 진행률·포인트 집계 조회."""
         a = project_access(me(), project)
-        all_tasks = db.tasks.list(lambda t: t.project_id == a.project.id and t.triage_status is None)
+        all_tasks = db.tasks.list(lambda t: t.project_id == a.project.id and t.deleted_at is None and t.triage_status is None)
         order = {"active": 0, "upcoming": 1, "completed": 2}
         cycles = [c for c in db.cycles.list(lambda c: c.project_id == a.project.id) if status is None or c.status == status]
         cycles.sort(key=lambda c: (order[c.status], c.start_date))
@@ -303,7 +304,7 @@ def build_mcp(settings: Settings, db: Database) -> MCPServer:
     def list_milestones(project: str, status: MilestoneStatus | None = None) -> list[dict[str, Any]]:
         """프로젝트의 마일스톤(에픽/릴리즈) 목록과 진척률 조회."""
         a = project_access(me(), project)
-        all_tasks = db.tasks.list(lambda t: t.project_id == a.project.id and t.triage_status is None)
+        all_tasks = db.tasks.list(lambda t: t.project_id == a.project.id and t.deleted_at is None and t.triage_status is None)
         order = {"active": 0, "planned": 1, "completed": 2}
         items = [m for m in db.milestones.list(lambda m: m.project_id == a.project.id) if status is None or m.status == status]
         items.sort(key=lambda m: (order[m.status], m.target_date is None, m.target_date or date.max, m.created_at))
@@ -329,7 +330,7 @@ def build_mcp(settings: Settings, db: Database) -> MCPServer:
     ) -> dict[str, Any]:
         """프로젝트의 버전(task.version)별 릴리즈 진행 현황 조회. version 과 include_changelog=true 지정 시 Markdown 체인지로그도 반환."""
         a = project_access(me(), project)
-        all_tasks = db.tasks.list(lambda t: t.project_id == a.project.id)
+        all_tasks = db.tasks.list(lambda t: t.project_id == a.project.id and t.deleted_at is None)
         summary = build_releases(a.project, all_tasks)
         releases = summary.releases
         if version:

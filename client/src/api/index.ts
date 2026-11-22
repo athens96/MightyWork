@@ -57,6 +57,7 @@ import type {
   TaskTemplateCreate,
   TaskUpdate,
   TokenResponse,
+  TrashItem,
   UnlinkedMention,
   User,
   WebhookDelivery,
@@ -230,6 +231,15 @@ export const searchApi = {
     if (preferProjectId) qs.set("prefer_project_id", preferProjectId);
     return http.get<GlobalSearchHit[]>(`/search?${qs}`);
   },
+};
+
+export const trashApi = {
+  list: (projectId: string) => http.get<TrashItem[]>(`/projects/${projectId}/trash`),
+  restore: (projectId: string, kind: "task" | "wiki", id: string) =>
+    http.post<{ kind: string; id: string }>(`/projects/${projectId}/trash/${kind}/${id}/restore`),
+  purge: (projectId: string, kind: "task" | "wiki", id: string) =>
+    http.delete(`/projects/${projectId}/trash/${kind}/${id}`),
+  empty: (projectId: string) => http.post<{ purged: number }>(`/projects/${projectId}/trash/empty`),
 };
 
 export const commentsApi = {

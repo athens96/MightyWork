@@ -30,6 +30,7 @@ def delete_project_cascade(db: Database, project_id: str) -> bool:
             db.project_members,
             db.wiki_pages,
             db.wiki_revisions,
+            db.wiki_comments,
             db.attachments,
             db.notifications,
             db.audit_logs,

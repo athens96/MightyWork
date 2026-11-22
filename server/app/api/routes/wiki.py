@@ -24,6 +24,7 @@ from app.services.audit import record_audit
 from app.services.events import publish_event
 from app.services.links import link_targets, norm_title, pages_by_title, propagate_rename
 from app.services.notifications import notify_mentions, notify_user
+from app.services.tasks import delete_wiki_page_cascade, soft_delete_wiki_page
 from app.services.wiki_revisions import line_diff, list_revisions, record_revision
 
 router = APIRouter(prefix="/projects/{project_id}/wiki/pages", tags=["wiki"])
@@ -31,7 +32,7 @@ router = APIRouter(prefix="/projects/{project_id}/wiki/pages", tags=["wiki"])
 
 def _get_or_404(db: Database, project: Project, page_id: str) -> WikiPage:
     page = db.wiki_pages.get(page_id)
-    if page is None or page.project_id != project.id:
+    if page is None or page.project_id != project.id or page.deleted_at is not None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Page not found")
     return page
 
@@ -43,7 +44,7 @@ def _validate_parent(db: Database, project: Project, page_id: str | None, parent
         if current == page_id:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "Page cannot be nested under itself")
         parent = db.wiki_pages.get(current)
-        if parent is None or parent.project_id != project.id:
+        if parent is None or parent.project_id != project.id or parent.deleted_at is not None:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "Parent page not found")
         current = parent.parent_id
 
@@ -64,7 +65,7 @@ def list_pages(
 ) -> list[WikiPageSummary]:
     """페이지 목록(본문 제외). Properties 로 거를 수 있다 (옵시디언 Bases 처럼)."""
     tag_key = tag.casefold() if tag else None
-    all_pages = db.wiki_pages.list(lambda p: p.project_id == project.id)
+    all_pages = db.wiki_pages.list(lambda p: p.project_id == project.id and p.deleted_at is None)
     by_title = pages_by_title(all_pages)
     backlink_counts: dict[str, int] = {}
     broken_counts: dict[str, int] = {}
@@ -172,23 +173,24 @@ def update_page(project: ProjectDep, page_id: str, body: WikiPageUpdate, user: C
 
 
 @router.delete("/{page_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[require(Permission.DELETE)])
-def delete_page(project: ProjectDep, page_id: str, user: CurrentUser, db: DbDep) -> Response:
+def delete_page(project: ProjectDep, page_id: str, user: CurrentUser, db: DbDep, permanent: bool = False) -> Response:
     page = _get_or_404(db, project, page_id)
-    if db.wiki_pages.list(lambda p: p.parent_id == page_id):
+    if db.wiki_pages.list(lambda p: p.parent_id == page_id and p.deleted_at is None):
         raise HTTPException(status.HTTP_409_CONFLICT, "Delete or move child pages first")
-    for rev in db.wiki_revisions.list(lambda r: r.page_id == page_id):
-        db.wiki_revisions.delete(rev.id)
-    for cmt in db.wiki_comments.list(lambda c: c.page_id == page_id):
-        db.wiki_comments.delete(cmt.id)
-    db.wiki_pages.delete(page_id)
+    if permanent:
+        delete_wiki_page_cascade(db, page_id)
+        summary = f"위키 '{page.title}' 영구 삭제"
+    else:
+        soft_delete_wiki_page(db, page, user.id)
+        summary = f"위키 '{page.title}' 휴지통 이동"
     record_audit(
         db,
         project_id=project.id,
         actor_id=user.id,
-        action="wiki.deleted",
+        action="wiki.deleted" if permanent else "wiki.trashed",
         target_type="wiki",
         target_id=page.id,
-        summary=f"위키 '{page.title}' 삭제",
+        summary=summary,
     )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 

@@ -71,7 +71,7 @@ def list_triage(project: ProjectDep, db: DbDep, include_declined: bool = False) 
     """트리아지 대기열 조회 (보류 기한이 지난 항목은 자동으로 pending 복귀)."""
     today = date.today()
     items: list[Task] = []
-    for t in db.tasks.list(lambda x: x.project_id == project.id and x.triage_status is not None):
+    for t in db.tasks.list(lambda x: x.project_id == project.id and x.deleted_at is None and x.triage_status is not None):
         if t.triage_status == "snoozed" and t.triage_snooze_until and t.triage_snooze_until <= today:
             t = t.model_copy(update={"triage_status": "pending", "triage_snooze_until": None, "updated_at": utcnow()})
             db.tasks.update(t)

@@ -65,12 +65,10 @@ class PageLinks(BaseModel):
 
 @router.get("/wiki/pages/{page_id}/links", response_model=PageLinks)
 def page_links(project: ProjectDep, page_id: str, db: DbDep) -> PageLinks:
-    page = db.wiki_pages.get(page_id)
-    if page is None or page.project_id != project.id:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Page not found")
+    page = _page_or_404(db, project, page_id)
     by_title = pages_by_title(project_pages(db, project))
     outgoing = [OutgoingLink(title=t, page_id=(p.id if (p := by_title.get(norm_title(t))) else None)) for t in link_targets(page.content)]
-    tasks_by_number = {t.number: t for t in db.tasks.list(lambda t: t.project_id == project.id)}
+    tasks_by_number = {t.number: t for t in db.tasks.list(lambda t: t.project_id == project.id and t.deleted_at is None)}
     numbers = task_numbers(page.content, project.key)
     return PageLinks(
         outgoing=outgoing,
@@ -102,7 +100,7 @@ class UnlinkedMention(BaseModel):
 
 def _page_or_404(db, project, page_id):
     page = db.wiki_pages.get(page_id)
-    if page is None or page.project_id != project.id:
+    if page is None or page.project_id != project.id or page.deleted_at is not None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Page not found")
     return page
 
@@ -119,7 +117,7 @@ def unlinked_mentions(project: ProjectDep, page_id: str, db: DbDep) -> list[Unli
         spans = find_mentions(p.content, names)
         if spans:
             result.append(UnlinkedMention(source_type="wiki", source_id=p.id, title=p.title, count=len(spans), snippets=mention_snippets(p.content, spans)))
-    for t in db.tasks.list(lambda t: t.project_id == project.id):
+    for t in db.tasks.list(lambda t: t.project_id == project.id and t.deleted_at is None):
         spans = find_mentions(t.description, names)
         if spans:
             result.append(UnlinkedMention(source_type="task", source_id=t.id, title=t.title, number=t.number, count=len(spans), snippets=mention_snippets(t.description, spans)))

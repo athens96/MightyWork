@@ -515,6 +515,16 @@ export interface NotificationList {
   items: NotificationItem[];
 }
 
+export interface TrashItem {
+  kind: "task" | "wiki";
+  id: string;
+  title: string;
+  number: number | null;
+  deleted_at: string;
+  deleted_by: string | null;
+  days_left: number;
+}
+
 export interface AuditLog {
   id: string;
   project_id: string;

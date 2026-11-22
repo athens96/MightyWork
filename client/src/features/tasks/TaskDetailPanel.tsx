@@ -269,7 +269,7 @@ export function TaskDetailPanel() {
   };
 
   const remove = async () => {
-    if (!task || !confirm(`"${task.title}" 일감을 삭제할까요?\n덧글과 이력도 함께 삭제됩니다.`)) return;
+    if (!task || !confirm(`"${task.title}" 일감을 휴지통으로 옮길까요?\n30일 이내에 휴지통에서 복구할 수 있습니다.`)) return;
     await tasksApi.remove(project.id, task.id);
     removeBookmark("task", task.id);
     onDeleted(task.id);

@@ -108,7 +108,8 @@ def test_comments_are_scoped_to_task_and_project(auth_client, base, task):
 def test_deleting_task_removes_comments_and_activity(app, auth_client, base, task):
     auth_client.post(f"{base}/{task['id']}/comments", json={"body": "x"})
     auth_client.patch(f"{base}/{task['id']}", json={"stage": "done"})
-    assert auth_client.delete(f"{base}/{task['id']}").status_code == 204
+    # 기본 삭제는 휴지통 이동(복구 대비 덧글·이력 보존), permanent=true 는 영구 삭제
+    assert auth_client.delete(f"{base}/{task['id']}", params={"permanent": True}).status_code == 204
     assert app.state.db.comments.list() == []
     assert app.state.db.task_activities.list() == []
 

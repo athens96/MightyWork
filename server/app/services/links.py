@@ -67,7 +67,7 @@ def pages_by_title(pages: list[WikiPage]) -> dict[str, WikiPage]:
 
 
 def project_pages(db: Database, project: Project) -> list[WikiPage]:
-    return db.wiki_pages.list(lambda p: p.project_id == project.id)
+    return db.wiki_pages.list(lambda p: p.project_id == project.id and p.deleted_at is None)
 
 
 def backlinks(db: Database, project: Project, page: WikiPage) -> list[WikiPage]:
@@ -114,7 +114,7 @@ def propagate_rename(db: Database, project: Project, page: WikiPage, old_title: 
         if new != p.content:
             db.wiki_pages.update(p.model_copy(update={"content": new}))
             changed += 1
-    for t in db.tasks.list(lambda t: t.project_id == project.id):
+    for t in db.tasks.list(lambda t: t.project_id == project.id and t.deleted_at is None):
         new = rename_links(t.description, old_title, page.title)
         if new != t.description:
             db.tasks.update(t.model_copy(update={"description": new}))

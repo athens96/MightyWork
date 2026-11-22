@@ -45,7 +45,7 @@ class ProjectGraph(BaseModel):
 
 def project_edges(db: Database, project: Project) -> tuple[dict[str, GraphNode], list[GraphEdge]]:
     pages = project_pages(db, project)
-    tasks = db.tasks.list(lambda t: t.project_id == project.id)
+    tasks = db.tasks.list(lambda t: t.project_id == project.id and t.deleted_at is None)
     by_title = pages_by_title(pages)
     by_number = {t.number: t for t in tasks}
 

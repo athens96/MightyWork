@@ -23,6 +23,8 @@ def _sha256(value: str) -> str:
 
 def _index_entry(table: str, entity) -> tuple[str, str, str, str] | None:
     """(row_key, kind, project_id, target_id, text) 중 인덱스 대상이면 반환."""
+    if getattr(entity, "deleted_at", None) is not None:
+        return None
     if table == "tasks":
         parts = [entity.title, entity.version or "", *entity.tags, entity.description, *(i.text for i in entity.checklist)]
         return ("task", entity.project_id, entity.id, " ".join(p for p in parts if p).casefold())
@@ -260,8 +262,11 @@ class SqliteRepository(Repository[T]):
                 )
             except sqlite3.IntegrityError as e:
                 raise ValueError(f"duplicate id: {entity.id}") from e
-            if self._table in _FTS_TABLES and (entry := _index_entry(self._table, entity)) is not None:
-                self._engine.upsert_search(con, f"{self._table}:{entity.id}", entry)
+            if self._table in _FTS_TABLES:
+                if (entry := _index_entry(self._table, entity)) is not None:
+                    self._engine.upsert_search(con, f"{self._table}:{entity.id}", entry)
+                else:
+                    self._engine.delete_search(con, f"{self._table}:{entity.id}")
             con.execute("COMMIT")
         except BaseException:
             if con.in_transaction:
@@ -281,8 +286,11 @@ class SqliteRepository(Repository[T]):
             if cur.rowcount == 0:
                 con.execute("ROLLBACK")
                 return None
-            if self._table in _FTS_TABLES and (entry := _index_entry(self._table, entity)) is not None:
-                self._engine.upsert_search(con, f"{self._table}:{entity.id}", entry)
+            if self._table in _FTS_TABLES:
+                if (entry := _index_entry(self._table, entity)) is not None:
+                    self._engine.upsert_search(con, f"{self._table}:{entity.id}", entry)
+                else:
+                    self._engine.delete_search(con, f"{self._table}:{entity.id}")
             con.execute("COMMIT")
         except BaseException:
             if con.in_transaction:

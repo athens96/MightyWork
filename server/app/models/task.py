@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from enum import Enum
 from typing import Literal
 
@@ -114,6 +114,8 @@ class Task(Entity, TaskBase):
     number: int  # 프로젝트 내 일련번호. 표시용 키는 f"{project.key}-{number}"
     created_by: str
     watcher_ids: list[str] = []  # 일감 구독자(워처) ID 목록
+    deleted_at: datetime | None = None  # 휴지통 이동 시각 (None 이면 활성)
+    deleted_by: str | None = None
     via_client: str | None = None  # MCP OAuth client_name (예: Claude Code, MightyCode)
 
 

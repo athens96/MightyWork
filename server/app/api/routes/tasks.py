@@ -33,7 +33,7 @@ from app.services.events import publish_event
 from app.services.links import link_targets, norm_title, pages_by_title, project_pages
 from app.services.notifications import notify_mentions, notify_user
 from app.services.projects import allocate_task_number
-from app.services.tasks import delete_task_cascade, record_changes, record_created
+from app.services.tasks import delete_task_cascade, record_changes, record_created, soft_delete_task
 from app.services.webhooks import dispatch_project_webhooks
 
 pipeline_router = APIRouter(tags=["tasks"])
@@ -139,7 +139,7 @@ def update_project_pipeline(
     fallback = body.remap_hidden_to if (body.remap_hidden_to and body.remap_hidden_to in visible) else visible[0]
     remapped = 0
     if hidden_keys:
-        for t in db.tasks.list(lambda x: x.project_id == project.id and x.stage in hidden_keys):
+        for t in db.tasks.list(lambda x: x.project_id == project.id and x.deleted_at is None and x.stage in hidden_keys):
             moved = t.model_copy(update={"stage": fallback, "updated_at": utcnow()})
             db.tasks.update(moved)
             record_changes(db, t, moved, user.id)
@@ -179,7 +179,7 @@ def list_my_tasks(
     if not projects_by_id:
         return []
     cutoff = date.today() + timedelta(days=2)
-    all_tasks = db.tasks.list(lambda t: t.project_id in projects_by_id and t.triage_status is None)
+    all_tasks = db.tasks.list(lambda t: t.project_id in projects_by_id and t.deleted_at is None and t.triage_status is None)
     sub_counts: dict[str, list[int]] = {}
     for t in all_tasks:
         if t.parent_id:
@@ -255,7 +255,7 @@ def _validate_parent(db: Database, project: Project, task_id: str | None, parent
         if current == task_id:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "Task cannot be nested under itself")
         parent = db.tasks.get(current)
-        if parent is None or parent.project_id != project.id:
+        if parent is None or parent.project_id != project.id or parent.deleted_at is not None:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "Parent task not found")
         current = parent.parent_id
 
@@ -270,12 +270,14 @@ def _read(
     if comment_count is None:
         comment_count = len(db.comments.list(lambda c: c.task_id == task.id))
     if subtask_stats is None:
-        subs = db.tasks.list(lambda t: t.parent_id == task.id)
+        subs = db.tasks.list(lambda t: t.parent_id == task.id and t.deleted_at is None)
         subtask_stats = (len(subs), sum(1 for s in subs if s.stage == PipelineStage.DONE))
     if blocked_by_count is None:
         blockers = db.task_links.list(lambda l: l.target_id == task.id and l.kind == TaskLinkKind.BLOCKS)
         blocked_by_count = sum(
-            1 for l in blockers if (src := db.tasks.get(l.source_id)) is not None and src.stage != PipelineStage.DONE
+            1
+            for l in blockers
+            if (src := db.tasks.get(l.source_id)) is not None and src.deleted_at is None and src.stage != PipelineStage.DONE
         )
     return TaskRead(
         **task.model_dump(),
@@ -299,7 +301,7 @@ def list_tasks(
     include_triage: bool = False,
 ) -> list[TaskRead]:
     all_project_tasks = db.tasks.list(
-        lambda t: t.project_id == project.id and (include_triage or t.triage_status is None)
+        lambda t: t.project_id == project.id and t.deleted_at is None and (include_triage or t.triage_status is None)
     )
     sub_counts: dict[str, list[int]] = {}
     for t in all_project_tasks:
@@ -413,11 +415,11 @@ def bulk_update_tasks(
             continue
         seen.add(tid)
         task = db.tasks.get(tid)
-        if task is None or task.project_id != project.id:
+        if task is None or task.project_id != project.id or task.deleted_at is not None:
             continue
 
         if body.delete:
-            delete_task_cascade(db, task.id)
+            soft_delete_task(db, task, user.id)
             publish_event(db, project.id, "task.deleted", {"task_id": task.id})
             affected += 1
             continue
@@ -552,17 +554,22 @@ def update_task(project: ProjectDep, task: TaskDep, body: TaskUpdate, user: Curr
 
 
 @router.delete("/{task_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[require(Permission.DELETE)])
-def delete_task(project: ProjectDep, task: TaskDep, user: CurrentUser, db: DbDep) -> Response:
+def delete_task(project: ProjectDep, task: TaskDep, user: CurrentUser, db: DbDep, permanent: bool = False) -> Response:
     key = f"{project.key}-{task.number}"
-    delete_task_cascade(db, task.id)
+    if permanent:
+        delete_task_cascade(db, task.id)
+        summary = f"{key} {task.title} 영구 삭제"
+    else:
+        soft_delete_task(db, task, user.id)
+        summary = f"{key} {task.title} 휴지통 이동"
     record_audit(
         db,
         project_id=project.id,
         actor_id=user.id,
-        action="task.deleted",
+        action="task.deleted" if permanent else "task.trashed",
         target_type="task",
         target_id=task.id,
-        summary=f"{key} {task.title} 삭제",
+        summary=summary,
     )
     publish_event(db, project.id, "task.deleted", {"task_id": task.id})
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -699,7 +706,7 @@ def move_task_to_project(
 
 @router.get("/{task_id}/subtasks", response_model=list[TaskRead])
 def list_subtasks(task: TaskDep, db: DbDep) -> list[TaskRead]:
-    subs = sorted(db.tasks.list(lambda t: t.parent_id == task.id), key=lambda t: t.number)
+    subs = sorted(db.tasks.list(lambda t: t.parent_id == task.id and t.deleted_at is None), key=lambda t: t.number)
     return [_read(db, s) for s in subs]
 
 
@@ -711,7 +718,7 @@ def list_task_links(task: TaskDep, db: DbDep) -> list[TaskLinkRead]:
         is_src = l.source_id == task.id
         other_id = l.target_id if is_src else l.source_id
         other = db.tasks.get(other_id)
-        if other is None:
+        if other is None or other.deleted_at is not None:
             continue
         kind = l.kind.value if is_src else _REVERSE_KIND[l.kind]
         out.append(TaskLinkRead(id=l.id, kind=kind, task_id=other.id, number=other.number, title=other.title, stage=other.stage))
@@ -723,7 +730,7 @@ def create_task_link(project: ProjectDep, task: TaskDep, body: TaskLinkCreate, u
     if body.target_id == task.id:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Cannot link a task to itself")
     target = db.tasks.get(body.target_id)
-    if target is None or target.project_id != project.id:
+    if target is None or target.project_id != project.id or target.deleted_at is not None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Target task not found")
     # 중복 검사 (relates_to 는 양방향 동일 취급)
     for l in db.task_links.list(lambda x: x.project_id == project.id):
