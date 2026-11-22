@@ -21,7 +21,7 @@ from app.models.wiki import (
 from app.services.access import is_member_user
 from app.services.audit import record_audit
 from app.services.events import publish_event
-from app.services.links import propagate_rename
+from app.services.links import link_targets, norm_title, pages_by_title, propagate_rename
 from app.services.notifications import notify_mentions, notify_user
 from app.services.wiki_revisions import line_diff, list_revisions, record_revision
 
@@ -63,14 +63,40 @@ def list_pages(
 ) -> list[WikiPageSummary]:
     """페이지 목록(본문 제외). Properties 로 거를 수 있다 (옵시디언 Bases 처럼)."""
     tag_key = tag.casefold() if tag else None
-    pages = db.wiki_pages.list(
-        lambda p: p.project_id == project.id
-        and (page_type is None or p.page_type == page_type)
+    all_pages = db.wiki_pages.list(lambda p: p.project_id == project.id)
+    by_title = pages_by_title(all_pages)
+    backlink_counts: dict[str, int] = {}
+    broken_counts: dict[str, int] = {}
+    for p in all_pages:
+        linked_ids: set[str] = set()
+        broken = 0
+        for raw_target in link_targets(p.content):
+            resolved = by_title.get(norm_title(raw_target))
+            if resolved is None:
+                broken += 1
+            elif resolved.id != p.id:
+                linked_ids.add(resolved.id)
+        if broken:
+            broken_counts[p.id] = broken
+        for tid in linked_ids:
+            backlink_counts[tid] = backlink_counts.get(tid, 0) + 1
+
+    pages = [
+        p
+        for p in all_pages
+        if (page_type is None or p.page_type == page_type)
         and (page_status is None or p.status == page_status)
         and (tag_key is None or tag_key in {t.casefold() for t in p.tags})
         and (owner_id is None or p.owner_id == owner_id)
-    )
-    return [WikiPageSummary(**p.model_dump()) for p in sorted(pages, key=lambda p: p.created_at)]
+    ]
+    return [
+        WikiPageSummary(
+            **p.model_dump(),
+            backlink_count=backlink_counts.get(p.id, 0),
+            broken_link_count=broken_counts.get(p.id, 0),
+        )
+        for p in sorted(pages, key=lambda p: p.created_at)
+    ]
 
 
 @router.post("", response_model=WikiPage, status_code=status.HTTP_201_CREATED, dependencies=[require(Permission.CREATE)])

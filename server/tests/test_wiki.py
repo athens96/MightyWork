@@ -143,3 +143,15 @@ def test_wiki_comments_crud_resolve_and_cascade_delete(app, auth_client, project
     # 페이지 삭제 시 남은 위키 댓글도 함께 정리
     assert auth_client.delete(f"{base}/{p['id']}").status_code == 204
     assert app.state.db.wiki_comments.get(c2["id"]) is None
+
+
+def test_wiki_list_includes_backlink_and_broken_link_counts(auth_client, project):
+    base = f"/api/projects/{project['id']}/wiki/pages"
+    target = auth_client.post(base, json={"title": "핵심 아키텍처"}).json()
+    src = auth_client.post(base, json={"title": "온보딩", "content": "[[핵심 아키텍처]] 와 [[아직 없는 문서]] 참고"}).json()
+    orphan = auth_client.post(base, json={"title": "고립 문서", "content": "링크 없음"}).json()
+
+    by_id = {p["id"]: p for p in auth_client.get(base).json()}
+    assert (by_id[target["id"]]["backlink_count"], by_id[target["id"]]["broken_link_count"]) == (1, 0)
+    assert (by_id[src["id"]]["backlink_count"], by_id[src["id"]]["broken_link_count"]) == (0, 1)
+    assert (by_id[orphan["id"]]["backlink_count"], by_id[orphan["id"]]["broken_link_count"]) == (0, 0)

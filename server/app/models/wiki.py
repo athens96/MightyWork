@@ -98,7 +98,7 @@ class WikiCommentUpdate(BaseModel):
 
 
 class WikiPageSummary(BaseModel):
-    """트리(사이드바)·링크 해석용 경량 응답 — 본문 제외."""
+    """트리(사이드바)·링크 해석·문서 건강 점검용 경량 응답 — 본문 제외."""
 
     id: str
     title: str
@@ -108,6 +108,8 @@ class WikiPageSummary(BaseModel):
     status: PageStatus | None = None
     owner_id: str | None = None
     tags: list[str] = []
+    backlink_count: int = 0
+    broken_link_count: int = 0
     updated_at: datetime
 
 

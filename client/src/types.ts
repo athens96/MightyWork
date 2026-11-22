@@ -310,6 +310,8 @@ export interface WikiPageSummary {
   status: PageStatus | null;
   owner_id: string | null;
   tags: string[];
+  backlink_count?: number;
+  broken_link_count?: number;
   updated_at: string;
 }
 

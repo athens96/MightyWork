@@ -2506,3 +2506,15 @@ button.tile.fill-run.is-active {
 .check-promote-btn {
   white-space: nowrap;
 }
+
+/* MW-31: 위키 문서 건강 점검 바 */
+.wiki-health-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 0 18px 10px;
+}
+.wiki-health-bar .btn {
+  gap: 5px;
+}
