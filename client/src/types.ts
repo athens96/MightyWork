@@ -312,7 +312,8 @@ export interface WikiPageSummary {
   updated_at: string;
 }
 
-export type WikiPageCreate = Pick<WikiPage, "title"> & Partial<Pick<WikiPage, "content" | "parent_id">>;
+export type WikiPageCreate = Pick<WikiPage, "title"> &
+  Partial<Pick<WikiPage, "content" | "parent_id" | "page_type" | "status" | "tags" | "aliases">>;
 export type WikiPageUpdate = Partial<Pick<WikiPage, "title" | "content" | "parent_id" | "aliases" | "page_type" | "status" | "owner_id" | "tags">>;
 
 export type PageType = "guide" | "spec" | "decision" | "meeting" | "reference" | "note";

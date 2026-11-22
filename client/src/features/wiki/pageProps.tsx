@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { Avatar } from "../../components/Avatar";
-import type { PageStatus, PageType, User, WikiPage } from "../../types";
+import type { PageStatus, PageType, User, WikiPage, WikiPageSummary } from "../../types";
 
 export const PAGE_TYPE_LABEL: Record<PageType, string> = {
   guide: "가이드",
@@ -26,7 +26,7 @@ export const PAGE_STATUS_TONE: Record<PageStatus, string> = {
   deprecated: "tone-err",
 };
 
-export type PropsDraft = Pick<WikiPage, "page_type" | "status" | "owner_id" | "tags">;
+export type PropsDraft = Pick<WikiPage, "page_type" | "status" | "owner_id" | "tags" | "parent_id">;
 
 /** 보기 모드: 제목 아래 속성 줄 */
 export function PropertiesBar({ page, users, basePath }: { page: WikiPage; users: User[]; basePath: string }) {
@@ -50,8 +50,18 @@ export function PropertiesBar({ page, users, basePath }: { page: WikiPage; users
   );
 }
 
-/** 편집 모드: 속성 입력 줄 */
-export function PropertiesEditor({ value, onChange, members }: { value: PropsDraft; onChange: (v: PropsDraft) => void; members: User[] }) {
+/** 편집 모드: 속성 입력 줄 (상위 페이지 이동 포함) */
+export function PropertiesEditor({
+  value,
+  onChange,
+  members,
+  parentCandidates = [],
+}: {
+  value: PropsDraft;
+  onChange: (v: PropsDraft) => void;
+  members: User[];
+  parentCandidates?: WikiPageSummary[];
+}) {
   const [tagDraft, setTagDraft] = useState("");
   const addTag = () => {
     const t = tagDraft.trim().replace(/^#/, "");
@@ -60,6 +70,17 @@ export function PropertiesEditor({ value, onChange, members }: { value: PropsDra
   };
   return (
     <div className="props-editor">
+      <label>
+        <span>상위 문서</span>
+        <select value={value.parent_id ?? ""} onChange={(e) => onChange({ ...value, parent_id: e.target.value || null })}>
+          <option value="">최상위 (루트)</option>
+          {parentCandidates.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.title}
+            </option>
+          ))}
+        </select>
+      </label>
       <label>
         <span>타입</span>
         <select value={value.page_type ?? ""} onChange={(e) => onChange({ ...value, page_type: (e.target.value || null) as PageType | null })}>

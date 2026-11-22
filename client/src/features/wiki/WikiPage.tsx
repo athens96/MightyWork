@@ -16,8 +16,9 @@ import { MarkdownToolbar } from "../../components/MarkdownToolbar";
 import { extractHeadings } from "../../lib/markdownHelpers";
 import { can } from "../../lib/permissions";
 import { extractImageFile, insertUploadedImage } from "../../lib/editorUpload";
-import { timeAgo } from "../../lib/time";
+import { timeAgo, todayYmd } from "../../lib/time";
 import { useLinkResolver } from "../../lib/useLinkResolver";
+import { collectDescendantIds, WIKI_TEMPLATES, type WikiTemplate } from "../../lib/wikiTemplates";
 import { injectTaskKeyIntoChecklist, injectTaskKeyIntoSelection } from "../../lib/wikiToTask";
 import { STAGE_TONE } from "../tasks/tones";
 import { WikiTree } from "./WikiTree";
@@ -48,6 +49,7 @@ export function WikiPage() {
   const [importing, setImporting] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
+  const [tplOpen, setTplOpen] = useState(false);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [selectionPop, setSelectionPop] = useState<{ text: string; top: number; left: number } | null>(null);
   const [createdNotice, setCreatedNotice] = useState<{ id: string; key: string; title: string } | null>(null);
@@ -109,6 +111,31 @@ export function WikiPage() {
     const created = await wikiApi.create(project.id, { title, parent_id: parentId });
     await reloadTree();
     navigate(`${basePath}/${created.id}`, { state: { edit: true } });
+  };
+
+  const createFromTemplate = async (tpl: WikiTemplate, parentId: string | null = null) => {
+    setTplOpen(false);
+    const today = todayYmd();
+    const created = await wikiApi.create(project.id, {
+      title: tpl.makeTitle(today),
+      content: tpl.makeContent(today),
+      parent_id: parentId,
+      page_type: tpl.page_type,
+      status: tpl.status,
+      tags: [...tpl.tags],
+    });
+    await reloadTree();
+    navigate(`${basePath}/${created.id}`, { state: { edit: true } });
+  };
+
+  const movePage = async (targetId: string, newParentId: string | null) => {
+    try {
+      const updated = await wikiApi.update(project.id, targetId, { parent_id: newParentId });
+      await reloadTree();
+      if (page?.id === targetId) setPage(updated);
+    } catch (e) {
+      alert(e instanceof ApiError ? String(e.detail) : "페이지 이동에 실패했습니다.");
+    }
   };
 
   // [[없는 페이지]] 클릭 → 그 제목으로 새 페이지 (생성 권한 있을 때만)
@@ -269,6 +296,31 @@ export function WikiPage() {
                 accept=".hwp,.hwpx,.docx,.pdf,.pptx,.xlsx,.md,.markdown,.txt"
                 onChange={(e) => importFile(e.target.files?.[0])}
               />
+              <div className="menu-anchor">
+                <button
+                  type="button"
+                  className="btn btn-sm btn-ghost"
+                  onClick={() => setTplOpen((o) => !o)}
+                  title="문서 템플릿으로 새 페이지 만들기"
+                >
+                  템플릿
+                </button>
+                {tplOpen && (
+                  <div className="popover wiki-tpl-menu">
+                    {WIKI_TEMPLATES.map((tpl) => (
+                      <button
+                        key={tpl.id}
+                        type="button"
+                        className="menu-item"
+                        onClick={() => createFromTemplate(tpl, page?.id ?? null)}
+                      >
+                        <span>{tpl.label}</span>
+                        <span className="muted">{tpl.desc}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
               <button className="icon-btn" onClick={() => createPage(null)} title="새 페이지">
                 <PlusIcon size={12} />
               </button>
@@ -279,7 +331,13 @@ export function WikiPage() {
           {pages.length === 0 ? (
             <p className="wiki-empty-nav">아직 페이지가 없습니다.{canCreate && " + 를 눌러 첫 페이지를 만드세요."}</p>
           ) : (
-            <WikiTree pages={pages} basePath={basePath} />
+            <WikiTree
+              projectId={project.id}
+              pages={pages}
+              basePath={basePath}
+              canEdit={canEdit}
+              onMovePage={canEdit ? movePage : undefined}
+            />
           )}
         </div>
       </aside>
@@ -507,7 +565,12 @@ export function WikiPage() {
                 placeholder="다른 이름 (예: SSO) 입력 후 Enter"
               />
             </div>
-            <PropertiesEditor value={draft} onChange={(v) => setDraft({ ...draft, ...v })} members={members} />
+            <PropertiesEditor
+              value={draft}
+              onChange={(v) => setDraft({ ...draft, ...v })}
+              members={members}
+              parentCandidates={pages.filter((p) => !collectDescendantIds(pages, page.id).has(p.id))}
+            />
             <EditorSuggestBar
               match={suggest.match}
               items={suggest.items}
@@ -729,12 +792,13 @@ function highlightNames(text: string, names: string[]) {
   return text.split(new RegExp(`(${alts.join("|")})`, "gi")).map((part, i) => (i % 2 ? <mark key={i}>{part}</mark> : part));
 }
 
-type Draft = Pick<WikiPageType, "title" | "content" | "aliases" | "page_type" | "status" | "owner_id" | "tags">;
+type Draft = Pick<WikiPageType, "title" | "content" | "parent_id" | "aliases" | "page_type" | "status" | "owner_id" | "tags">;
 
 function toDraft(p: WikiPageType | null): Draft {
   return {
     title: p?.title ?? "",
     content: p?.content ?? "",
+    parent_id: p?.parent_id ?? null,
     aliases: p?.aliases ?? [],
     page_type: p?.page_type ?? null,
     status: p?.status ?? null,

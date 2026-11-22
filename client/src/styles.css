@@ -2238,3 +2238,70 @@ button.tile.fill-run.is-active {
 }
 .md-tool-btn.is-bold { font-weight: 800; }
 .md-tool-btn.is-italic { font-style: italic; }
+
+/* ==========================================================================
+   MW-22: 위키 트리 접기/펼치기 · 드래그 이동 · 내장 템플릿 메뉴
+   ========================================================================== */
+.tree-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border-radius: var(--r-search);
+}
+.tree-row > a {
+  flex: 1;
+  min-width: 0;
+}
+.tree-row.is-dragging { opacity: 0.45; }
+.tree-row.is-drop-target {
+  outline: 1.5px dashed var(--accent);
+  background: var(--accent-soft);
+}
+.tree-toggle {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ink3);
+  flex: none;
+}
+.tree-toggle:hover {
+  background: var(--subtle);
+  color: var(--ink);
+}
+.tree-toggle svg {
+  transition: transform var(--quick) var(--ease);
+}
+.tree-toggle svg.is-open {
+  transform: rotate(90deg);
+}
+.tree-spacer {
+  width: 18px;
+  flex: none;
+}
+.tree-root-drop {
+  margin-bottom: 6px;
+  padding: 6px 8px;
+  border: 1.5px dashed var(--line-strong);
+  border-radius: var(--r-search);
+  font-size: 11px;
+  color: var(--ink2);
+  text-align: center;
+}
+.tree-root-drop.is-drop-target {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.wiki-tpl-menu {
+  left: 0;
+  right: auto;
+  min-width: 240px;
+}
+.wiki-nav {
+  overflow: visible;
+}
