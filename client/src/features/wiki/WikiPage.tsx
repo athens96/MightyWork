@@ -45,6 +45,7 @@ export function WikiPage() {
   const [editorCursor, setEditorCursor] = useState(0);
   const [importing, setImporting] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [navOpen, setNavOpen] = useState(false);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [selectionPop, setSelectionPop] = useState<{ text: string; top: number; left: number } | null>(null);
   const [createdNotice, setCreatedNotice] = useState<{ id: string; key: string; title: string } | null>(null);
@@ -80,6 +81,7 @@ export function WikiPage() {
 
   useEffect(() => {
     setEditing(false);
+    setNavOpen(false);
     setSelectionPop(null);
     setCreatedNotice(null);
     if (!pageId) return setPage(null);
@@ -242,9 +244,14 @@ export function WikiPage() {
 
   return (
     <div className="wiki">
-      <aside className="pane wiki-nav">
+      <aside className={`pane wiki-nav ${pageId && !navOpen ? "is-collapsed-mobile" : ""}`}>
         <div className="pane-header">
           <span className="pane-title">페이지 {pages.length}</span>
+          {pageId && (
+            <button type="button" className="btn btn-sm btn-ghost wiki-nav-toggle" onClick={() => setNavOpen((o) => !o)}>
+              {navOpen ? "접기" : "목차"}
+            </button>
+          )}
           <Link to={basePath} className="btn btn-sm btn-ghost" title="문서 목록 (속성으로 거르기)">
             목록
           </Link>

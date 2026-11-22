@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Avatar } from "../../components/Avatar";
 import { CheckSquareIcon, CommentIcon } from "../../components/icons";
 import { dueState, formatDate } from "../../lib/time";
-import type { PipelineStageInfo, Task, User } from "../../types";
+import type { PipelineStage, PipelineStageInfo, Task, User } from "../../types";
 import { PRIORITY_META, STAGE_TONE } from "./tones";
 
 interface Props {
@@ -15,6 +15,7 @@ interface Props {
   selected: boolean;
   checked?: boolean;
   onToggleCheck?: (taskId: string) => void;
+  onMoveStage?: (taskId: string, stage: PipelineStage) => void;
   draggable?: boolean;
   dragging?: boolean;
   onDragStart?: (e: DragEvent<HTMLElement>) => void;
@@ -36,7 +37,21 @@ function firstLine(md: string): string | undefined {
  * 머리줄(톤 표시·키·활동 막대·상태·추정치) → 제목 → 미리보기(다음 할 일/설명) → 작업자·배지.
  * 진행 중이면 run 색 점선이 흐르는 외곽선 + 후광.
  */
-export function TaskCard({ task, taskKey, href, assignee, stages, selected, checked, onToggleCheck, draggable, dragging, onDragStart, onDragEnd }: Props) {
+export function TaskCard({
+  task,
+  taskKey,
+  href,
+  assignee,
+  stages,
+  selected,
+  checked,
+  onToggleCheck,
+  onMoveStage,
+  draggable,
+  dragging,
+  onDragStart,
+  onDragEnd,
+}: Props) {
   const navigate = useNavigate();
   const priority = PRIORITY_META[task.priority];
   const running = task.stage === "in_progress";
@@ -79,7 +94,29 @@ export function TaskCard({ task, taskKey, href, assignee, stages, selected, chec
           </span>
         )}
         <span className="spacer" />
-        <span className="pill">{stageLabel}</span>
+        {onMoveStage ? (
+          <>
+            <span className="pill desktop-stage-pill">{stageLabel}</span>
+            <select
+              className="mobile-stage-select"
+              value={task.stage}
+              aria-label={`${taskKey} 단계 이동`}
+              onClick={(e) => e.stopPropagation()}
+              onChange={(e) => {
+                e.stopPropagation();
+                onMoveStage(task.id, e.target.value as PipelineStage);
+              }}
+            >
+              {stages.map((s) => (
+                <option key={s.key} value={s.key}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
+          </>
+        ) : (
+          <span className="pill">{stageLabel}</span>
+        )}
         {task.estimate != null && <span className="token">{task.estimate}pt</span>}
       </header>
 

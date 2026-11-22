@@ -523,6 +523,7 @@ export function TaskBoardPage() {
                       selected={task.id === openTaskId}
                       checked={selectedIds.has(task.id)}
                       onToggleCheck={canEdit ? toggleSelect : undefined}
+                      onMoveStage={canEdit ? moveStage : undefined}
                       draggable={canEdit}
                       dragging={draggingId === task.id}
                       onDragStart={(e) => {

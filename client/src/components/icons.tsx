@@ -188,3 +188,9 @@ export const RefreshIcon = (p: P) => (
     <path d="M21 3v5h-5" />
   </Icon>
 );
+
+export const MenuIcon = (p: P) => (
+  <Icon {...p}>
+    <path d="M4 6h16M4 12h16M4 18h16" />
+  </Icon>
+);

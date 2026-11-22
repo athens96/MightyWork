@@ -8,7 +8,7 @@ import { APP_VERSION } from "../lib/version";
 import { useTheme } from "../theme";
 import { CommandPalette } from "./CommandPalette";
 import { QuickCreateModal, ShortcutsModal } from "./QuickCreateModal";
-import { BellIcon, BoardIcon, CalendarIcon, CheckSquareIcon, DocIcon, FolderIcon, GraphIcon, GridIcon, LogoutIcon, MoonIcon, PlugIcon, PlusIcon, SearchIcon, SunIcon } from "./icons";
+import { BellIcon, BoardIcon, CalendarIcon, CheckSquareIcon, CloseIcon, DocIcon, FolderIcon, GraphIcon, GridIcon, LogoutIcon, MenuIcon, MoonIcon, PlugIcon, PlusIcon, SearchIcon, SunIcon } from "./icons";
 
 export const OPEN_COMMAND_EVENT = "mightywork:open-command";
 
@@ -22,10 +22,13 @@ export function Layout() {
   const [cmdOpen, setCmdOpen] = useState(false);
   const [quickOpen, setQuickOpen] = useState(false);
   const [keysOpen, setKeysOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const location = useLocation();
   const activeProjectId = useMatch("/projects/:projectId/*")?.params.projectId;
+  const activeProject = projects.find((p) => p.id === activeProjectId);
 
   useEffect(() => {
+    setDrawerOpen(false);
     notificationsApi.list(true).then((r) => setUnread(r.unread_count), () => {});
   }, [location.pathname]);
 
@@ -61,6 +64,7 @@ export function Layout() {
         setCmdOpen(false);
         setQuickOpen(false);
         setKeysOpen(false);
+        setDrawerOpen(false);
         return;
       }
       const typing = e.target instanceof HTMLElement && e.target.closest("input, textarea, select, [contenteditable='true']");
@@ -86,12 +90,40 @@ export function Layout() {
 
   return (
     <div className="app">
-      <aside className="sidebar">
-        <Link to="/projects" className="side-brand" title={`MightyWork v${APP_VERSION}`}>
-          <img src="/favicon.svg" alt="" width={22} height={22} />
-          MightyWork
-          <span className="brand-ver">v{APP_VERSION}</span>
+      <header className="mobile-topbar">
+        <button type="button" className="icon-btn mobile-menu-btn" onClick={() => setDrawerOpen(true)} aria-label="메뉴 열기">
+          <MenuIcon size={18} />
+        </button>
+        <Link to={activeProject ? `/projects/${activeProject.id}/tasks` : "/projects"} className="mobile-brand">
+          <img src="/favicon.svg" alt="" width={20} height={20} />
+          <span className="mobile-brand-title">{activeProject ? activeProject.name : "MightyWork"}</span>
+          {activeProject && <span className="key-badge">{activeProject.key}</span>}
         </Link>
+        <div className="mobile-top-actions">
+          <button type="button" className="icon-btn" onClick={() => setCmdOpen(true)} aria-label="검색" title="검색 (⌘K)">
+            <SearchIcon size={16} />
+          </button>
+          <button type="button" className="icon-btn" onClick={() => setQuickOpen(true)} aria-label="새 일감" title="빠른 일감 생성 (C)">
+            <PlusIcon size={16} />
+          </button>
+          <NavLink to="/notifications" className="icon-btn notif-btn" aria-label="알림" title={`알림${unread ? ` (${unread})` : ""}`}>
+            <BellIcon size={16} />
+            {unread > 0 && <span className="notif-badge">{unread > 9 ? "9+" : unread}</span>}
+          </NavLink>
+        </div>
+      </header>
+      {drawerOpen && <div className="drawer-backdrop" onClick={() => setDrawerOpen(false)} aria-hidden="true" />}
+      <aside className={`sidebar ${drawerOpen ? "is-open" : ""}`}>
+        <div className="side-brand-row">
+          <Link to="/projects" className="side-brand" title={`MightyWork v${APP_VERSION}`}>
+            <img src="/favicon.svg" alt="" width={22} height={22} />
+            MightyWork
+            <span className="brand-ver">v{APP_VERSION}</span>
+          </Link>
+          <button type="button" className="icon-btn mobile-close-btn" onClick={() => setDrawerOpen(false)} aria-label="메뉴 닫기">
+            <CloseIcon size={15} />
+          </button>
+        </div>
         <label className="side-search">
           <SearchIcon size={13} />
           <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="프로젝트 검색" />
