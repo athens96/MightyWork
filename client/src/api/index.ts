@@ -40,6 +40,8 @@ import type {
   ProjectWebhook,
   QAResponse,
   RelationKind,
+  ReleaseChangelogResponse,
+  ReleaseListResponse,
   ReviewStatus,
   SavedView,
   SearchHit,
@@ -152,6 +154,14 @@ export const milestonesApi = {
   create: (projectId: string, body: MilestoneCreate) => http.post<Milestone>(`/projects/${projectId}/milestones`, body),
   update: (projectId: string, id: string, body: MilestoneUpdate) => http.patch<Milestone>(`/projects/${projectId}/milestones/${id}`, body),
   remove: (projectId: string, id: string) => http.delete(`/projects/${projectId}/milestones/${id}`),
+};
+
+export const releasesApi = {
+  list: (projectId: string) => http.get<ReleaseListResponse>(`/projects/${projectId}/releases`),
+  changelog: (projectId: string, version: string, includeUnfinished = false) =>
+    http.get<ReleaseChangelogResponse>(
+      `/projects/${projectId}/releases/${encodeURIComponent(version)}/changelog${includeUnfinished ? "?include_unfinished=true" : ""}`,
+    ),
 };
 
 export const templatesApi = {

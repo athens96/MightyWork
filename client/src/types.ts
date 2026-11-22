@@ -134,6 +134,48 @@ export interface MilestoneCreate {
 
 export type MilestoneUpdate = Partial<MilestoneCreate>;
 
+export type ReleaseStatus = "released" | "in_progress" | "planned";
+
+export interface ReleaseTaskItem {
+  id: string;
+  number: number;
+  key: string;
+  title: string;
+  stage: PipelineStage;
+  priority: Priority;
+  tags: string[];
+  estimate: number | null;
+  assignee_id: string | null;
+  updated_at: string;
+}
+
+export interface ReleaseSummary {
+  version: string;
+  status: ReleaseStatus;
+  total_tasks: number;
+  done_tasks: number;
+  in_progress_tasks: number;
+  todo_tasks: number;
+  total_points: number;
+  done_points: number;
+  progress_pct: number;
+  latest_updated_at: string | null;
+  tasks: ReleaseTaskItem[];
+}
+
+export interface ReleaseListResponse {
+  releases: ReleaseSummary[];
+  unversioned_count: number;
+}
+
+export interface ReleaseChangelogResponse {
+  version: string;
+  markdown: string;
+  total_tasks: number;
+  done_tasks: number;
+  included_tasks: number;
+}
+
 export interface TaskTemplate {
   id: string;
   project_id: string;

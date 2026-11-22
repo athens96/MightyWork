@@ -8,6 +8,7 @@ import { useAutoRefresh } from "../../lib/useAutoRefresh";
 import type { Cycle, CycleStatus } from "../../types";
 import { useCurrentProject } from "../projects/ProjectLayout";
 import { MilestonesSection } from "./MilestonesSection";
+import { ReleasesSection } from "./ReleasesSection";
 
 const STATUS_META: Record<CycleStatus, { label: string; tone: string }> = {
   active: { label: "진행 중", tone: "tone-run" },
@@ -100,7 +101,8 @@ function BurndownChart({ cycle }: { cycle: Cycle }) {
 export function CyclesPage() {
   const project = useCurrentProject();
   const [searchParams, setSearchParams] = useSearchParams();
-  const activeTab = searchParams.get("tab") === "milestones" ? "milestones" : "cycles";
+  const tabParam = searchParams.get("tab");
+  const activeTab = tabParam === "milestones" ? "milestones" : tabParam === "releases" ? "releases" : "cycles";
   const [cycles, setCycles] = useState<Cycle[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
@@ -216,11 +218,16 @@ export function CyclesPage() {
           <button aria-pressed={activeTab === "milestones"} onClick={() => setSearchParams({ tab: "milestones" }, { replace: true })}>
             마일스톤 · 로드맵
           </button>
+          <button aria-pressed={activeTab === "releases"} onClick={() => setSearchParams({ tab: "releases" }, { replace: true })}>
+            릴리즈 · 버전
+          </button>
         </div>
       </div>
 
       {activeTab === "milestones" ? (
         <MilestonesSection project={project} />
+      ) : activeTab === "releases" ? (
+        <ReleasesSection project={project} />
       ) : (
         <>
       <section className="tiles">

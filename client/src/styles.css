@@ -2078,3 +2078,68 @@ button.tile.fill-run.is-active {
 .quick-version-input {
   width: 112px;
 }
+
+/* ==========================================================================
+   MW-19: 버전별 릴리즈 대시보드 & 체인지로그 미리보기
+   ========================================================================== */
+.release-tasks-list {
+  list-style: none;
+  margin: 0;
+  padding: 8px 0 0;
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.btn svg.is-open {
+  transform: rotate(90deg);
+}
+.release-task-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 6px;
+  border-radius: var(--r-row);
+  font-size: 12.5px;
+}
+.release-task-row:hover {
+  background: var(--subtle);
+}
+.release-task-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.release-task-title:hover {
+  color: var(--accent);
+}
+.release-changelog-box {
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.release-changelog-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.release-md-pre {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: var(--r-entry);
+  border: 1px solid var(--line);
+  background: var(--card-raised);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 360px;
+  overflow-y: auto;
+}

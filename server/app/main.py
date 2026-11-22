@@ -24,6 +24,7 @@ from app.api.routes import (
     notifications,
     oauth,
     projects,
+    releases,
     tasks,
     templates,
     triage,
@@ -111,6 +112,7 @@ def create_app(settings: Settings | None = None, db: Database | None = None) -> 
     api.include_router(views.router)
     api.include_router(cycles.router)
     api.include_router(milestones.router)
+    api.include_router(releases.router)
     api.include_router(comments.router)
     api.include_router(wiki.router)
     api.include_router(attachments.router)
