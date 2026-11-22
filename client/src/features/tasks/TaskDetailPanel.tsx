@@ -13,6 +13,7 @@ import { sortVersionLabels } from "../../lib/taskGrouping";
 import { useAutoRefresh } from "../../lib/useAutoRefresh";
 import { useLinkResolver } from "../../lib/useLinkResolver";
 import { Markdown } from "../../components/Markdown";
+import { MarkdownToolbar } from "../../components/MarkdownToolbar";
 import type { Attachment, Comment, GitHubLink, Task, TaskActivity, TaskLink, TaskLinkKind, TaskUpdate, WikiPageSummary } from "../../types";
 import { useBoard } from "./boardContext";
 import { TaskChecklist } from "./TaskChecklist";
@@ -339,6 +340,7 @@ export function TaskDetailPanel() {
                         requestAnimationFrame(() => descRef.current?.setSelectionRange(pos, pos));
                       }}
                     />
+                    <MarkdownToolbar textareaRef={descRef} value={desc} onChange={setDesc} />
                     <div className="editor-split compact">
                       <textarea
                         ref={descRef}

@@ -1,10 +1,11 @@
-import { isValidElement, useEffect, useMemo, useState, type ReactNode } from "react";
+import { cloneElement, isValidElement, useEffect, useMemo, useState, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import { Link } from "react-router-dom";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import "highlight.js/styles/github-dark.css";
 import { requestFile } from "../api/http";
+import { parseCalloutHeader, slugifyHeading, type HeadingItem } from "../lib/markdownHelpers";
 import { hasTaskKey } from "../lib/wikiToTask";
 import { MISSING_PREFIX, remarkWikiLinks, type LinkResolver } from "../lib/wikilinks";
 
@@ -47,12 +48,53 @@ function extractNodeText(node: ReactNode): string {
   return "";
 }
 
+/** 콜아웃 blockquote(첫 줄이 [!NOTE] 등) 변환 */
+function renderBlockquote(children: ReactNode) {
+  const list = Array.isArray(children) ? children : [children];
+  const firstIdx = list.findIndex((c) => isValidElement(c));
+  if (firstIdx >= 0) {
+    const firstEl = list[firstIdx];
+    if (isValidElement<{ children?: ReactNode }>(firstEl) && firstEl.type === "p") {
+      const pKids = Array.isArray(firstEl.props.children) ? firstEl.props.children : [firstEl.props.children];
+      const firstStr = pKids[0];
+      if (typeof firstStr === "string") {
+        const parsed = parseCalloutHeader(firstStr);
+        if (parsed) {
+          const restFirstP = [parsed.rest, ...pKids.slice(1)].filter((x) => x !== "" && x !== undefined && x !== null);
+          const updatedFirstP = restFirstP.length > 0 ? cloneElement(firstEl, { key: "callout-p0" }, restFirstP) : null;
+          const tail = list.slice(firstIdx + 1);
+          const title = parsed.customTitle || parsed.meta.label;
+          return (
+            <div className={`callout callout-${parsed.meta.kind} ${parsed.meta.tone}`}>
+              <div className="callout-title">{title}</div>
+              {(updatedFirstP || tail.length > 0) && (
+                <div className="callout-body">
+                  {updatedFirstP}
+                  {tail}
+                </div>
+              )}
+            </div>
+          );
+        }
+      }
+    }
+  }
+  return <blockquote>{children}</blockquote>;
+}
+
 function makeComponents(
-  resolver?: LinkResolver,
-  onConvertChecklistItem?: (text: string) => void,
-  projectKey?: string,
+  resolver: LinkResolver | undefined,
+  onConvertChecklistItem: ((text: string) => void) | undefined,
+  projectKey: string | undefined,
+  seenHeadings: Map<string, number>,
 ): Components {
+  const headingId = (children: ReactNode) => slugifyHeading(extractNodeText(children).trim(), seenHeadings);
+
   return {
+    h1: ({ children }) => <h1 id={headingId(children)}>{children}</h1>,
+    h2: ({ children }) => <h2 id={headingId(children)}>{children}</h2>,
+    h3: ({ children }) => <h3 id={headingId(children)}>{children}</h3>,
+    blockquote: ({ children }) => renderBlockquote(children),
     img: ({ src, alt, title }) => <AuthImage src={src} alt={alt} title={title} />,
     li: ({ className, children, ...rest }) => {
       const isTaskItem = typeof className === "string" && className.includes("task-list-item");
@@ -106,8 +148,42 @@ function makeComponents(
   };
 }
 
+/** 위키 긴 문서용 접이식 자동 목차(TOC) */
+export function TableOfContents({ headings }: { headings: HeadingItem[] }) {
+  const [open, setOpen] = useState(true);
+  if (headings.length < 2) return null;
+
+  return (
+    <nav className="wiki-toc" aria-label="문서 목차">
+      <button type="button" className="wiki-toc-head" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+        <span>목차 ({headings.length})</span>
+        <span className="muted" style={{ fontSize: 11 }}>
+          {open ? "접기" : "펼치기"}
+        </span>
+      </button>
+      {open && (
+        <ol className="wiki-toc-list">
+          {headings.map((h) => (
+            <li key={h.id} className={`toc-l${h.level}`}>
+              <a
+                href={`#${h.id}`}
+                onClick={(e) => {
+                  e.preventDefault();
+                  document.getElementById(h.id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+                }}
+              >
+                {h.text}
+              </a>
+            </li>
+          ))}
+        </ol>
+      )}
+    </nav>
+  );
+}
+
 /**
- * GitHub 스타일 마크다운 렌더러 (표, 체크리스트, 취소선, 자동 링크, 코드 하이라이트).
+ * GitHub 스타일 마크다운 렌더러 (표, 체크리스트, 콜아웃, 헤딩 앵커, 코드 하이라이트).
  * links 를 넘기면 [[페이지]] 위키 링크와 일감 키(KEY-12)를 링크로 바꾼다.
  * 원시 HTML 은 렌더링하지 않는다(XSS 방지) — react-markdown 기본 동작.
  */
@@ -125,10 +201,9 @@ export function Markdown({
   projectKey?: string;
 }) {
   const remarkPlugins = useMemo(() => (links ? [remarkGfm, remarkWikiLinks(links)] : [remarkGfm]), [links]);
-  const components = useMemo(
-    () => makeComponents(links, onConvertChecklistItem, projectKey),
-    [links, onConvertChecklistItem, projectKey],
-  );
+  // 매 렌더 패스마다 헤딩 ID 중복 카운터를 초기화해 extractHeadings 와 1:1 일치시킨다
+  const seenHeadings = new Map<string, number>();
+  const components = makeComponents(links, onConvertChecklistItem, projectKey, seenHeadings);
   return (
     <div className={`markdown ${className}`}>
       <ReactMarkdown remarkPlugins={remarkPlugins} rehypePlugins={[rehypeHighlight]} components={components}>

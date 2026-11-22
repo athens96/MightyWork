@@ -2143,3 +2143,98 @@ button.tile.fill-run.is-active {
   max-height: 360px;
   overflow-y: auto;
 }
+
+/* ==========================================================================
+   MW-21: 위키 자동 목차(TOC) · GitHub 콜아웃 · 경량 마크다운 서식 툴바
+   ========================================================================== */
+.wiki-toc {
+  margin: 0 0 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-entry);
+  background: var(--card-raised);
+  overflow: hidden;
+}
+.wiki-toc-head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 12px;
+  border: none;
+  background: transparent;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--ink2);
+  text-align: left;
+}
+.wiki-toc-head:hover {
+  background: var(--subtle);
+}
+.wiki-toc-list {
+  list-style: none;
+  margin: 0;
+  padding: 4px 12px 10px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 12.5px;
+}
+.wiki-toc-list a {
+  display: block;
+  padding: 2px 4px;
+  border-radius: 5px;
+  color: var(--ink2);
+  text-decoration: none;
+}
+.wiki-toc-list a:hover {
+  background: var(--subtle);
+  color: var(--accent);
+}
+.wiki-toc-list .toc-l2 { padding-left: 14px; }
+.wiki-toc-list .toc-l3 { padding-left: 28px; font-size: 12px; }
+
+.markdown .callout {
+  margin: 0 0 1em;
+  padding: 10px 13px;
+  border-radius: var(--r-entry);
+  border: 1px solid color-mix(in srgb, var(--tone, var(--accent)) 32%, var(--line));
+  border-left: 3.5px solid var(--tone, var(--accent));
+  background: var(--tone-soft, var(--accent-soft));
+}
+.markdown .callout-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--tone-text, var(--accent));
+  margin-bottom: 4px;
+}
+.markdown .callout-body > :first-child { margin-top: 0; }
+.markdown .callout-body > :last-child { margin-bottom: 0; }
+
+.md-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-entry);
+  background: var(--card-raised);
+}
+.md-tool-btn {
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink2);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+.md-tool-btn:hover {
+  background: var(--card);
+  border-color: var(--line);
+  color: var(--ink);
+}
+.md-tool-btn.is-bold { font-weight: 800; }
+.md-tool-btn.is-italic { font-style: italic; }

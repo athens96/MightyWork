@@ -11,7 +11,9 @@ import { WikiIndex } from "./WikiIndex";
 import { useCurrentProject } from "../projects/ProjectLayout";
 import { EditorSuggestBar, useEditorSuggest } from "../../components/EditorSuggest";
 import { ChevronIcon, EditIcon, HistoryIcon, PaperclipIcon, PlusIcon, TrashIcon } from "../../components/icons";
-import { Markdown } from "../../components/Markdown";
+import { Markdown, TableOfContents } from "../../components/Markdown";
+import { MarkdownToolbar } from "../../components/MarkdownToolbar";
+import { extractHeadings } from "../../lib/markdownHelpers";
 import { can } from "../../lib/permissions";
 import { extractImageFile, insertUploadedImage } from "../../lib/editorUpload";
 import { timeAgo } from "../../lib/time";
@@ -348,15 +350,18 @@ export function WikiPage() {
                 </div>
               )}
               {page.content ? (
-                <div ref={mdWrapRef} onMouseUp={handleWikiMouseUp}>
-                  <Markdown
-                    links={resolver}
-                    projectKey={project.key}
-                    onConvertChecklistItem={canCreate && canEdit ? (txt) => createTaskFromWiki(txt, "checklist") : undefined}
-                  >
-                    {page.content}
-                  </Markdown>
-                </div>
+                <>
+                  <TableOfContents headings={extractHeadings(page.content)} />
+                  <div ref={mdWrapRef} onMouseUp={handleWikiMouseUp}>
+                    <Markdown
+                      links={resolver}
+                      projectKey={project.key}
+                      onConvertChecklistItem={canCreate && canEdit ? (txt) => createTaskFromWiki(txt, "checklist") : undefined}
+                    >
+                      {page.content}
+                    </Markdown>
+                  </div>
+                </>
               ) : (
                 <p className="muted">내용 없음{canEdit && " — 편집을 눌러 작성하세요."}</p>
               )}
@@ -513,6 +518,11 @@ export function WikiPage() {
                 setEditorCursor(pos);
                 requestAnimationFrame(() => editorRef.current?.setSelectionRange(pos, pos));
               }}
+            />
+            <MarkdownToolbar
+              textareaRef={editorRef}
+              value={draft.content}
+              onChange={(content) => setDraft((d) => ({ ...d, content }))}
             />
             <div className="editor-split">
               <textarea
