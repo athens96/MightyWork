@@ -728,6 +728,10 @@ export function WikiPage() {
                   await wikiApi.deleteComment(project.id, page.id, id);
                   setComments((prev) => prev.filter((c) => c.id !== id));
                 }}
+                onToggleReaction={async (id, emoji) => {
+                  const updated = await wikiApi.toggleCommentReaction(project.id, page.id, id, emoji);
+                  setComments((prev) => prev.map((c) => (c.id === id ? updated : c)));
+                }}
               />
             </div>
           </>

@@ -12,6 +12,7 @@ const KIND_LABEL: Record<NotificationItem["kind"], string> = {
   comment: "덧글",
   ownership: "소유권",
   invite: "초대",
+  watched: "구독",
 };
 
 export function NotificationsPage() {

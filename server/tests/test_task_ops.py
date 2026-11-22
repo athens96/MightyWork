@@ -92,3 +92,42 @@ def test_blocked_by_count_tracks_unfinished_blockers(auth_client, project):
     assert auth_client.get(f"{base}/{blocked['id']}").json()["blocked_by_count"] == 0
     listed2 = {t["id"]: t for t in auth_client.get(base).json()}
     assert listed2[blocked["id"]]["blocked_by_count"] == 0
+
+
+def test_task_watchers_receive_notifications_and_comment_reactions_toggle(app, auth_client, project):
+    base = f"/api/projects/{project['id']}/tasks"
+    bob = login(app, "u2:bob@example.com")
+    auth_client.post(f"/api/projects/{project['id']}/members", json={"email": "bob@example.com", "permissions": ["view", "create"]})
+
+    t = auth_client.post(base, json={"title": "핵심 장애 대응"}).json()
+    assert t["watcher_ids"] == []
+
+    # bob 구독 → 단계 변경 및 덧글 시 알림 수신
+    watched = bob.post(f"{base}/{t['id']}/watch").json()
+    assert watched["watcher_ids"] == ["u2"]
+
+    auth_client.patch(f"{base}/{t['id']}", json={"stage": "in_progress"})
+    cmt = auth_client.post(f"{base}/{t['id']}/comments", json={"body": "원인 분석 시작"}).json()
+
+    notifs = bob.get("/api/notifications").json()["items"]
+    assert any(n["kind"] == "watched" for n in notifs)
+    assert any(n["kind"] == "comment" for n in notifs)
+
+    # 구독 해제
+    unwatched = bob.post(f"{base}/{t['id']}/watch").json()
+    assert unwatched["watcher_ids"] == []
+
+    # 덧글 리액션 토글 및 미지원 이모지 거부
+    assert bob.post(f"{base}/{t['id']}/comments/{cmt['id']}/reactions", json={"emoji": "invalid"}).status_code == 400
+    r1 = bob.post(f"{base}/{t['id']}/comments/{cmt['id']}/reactions", json={"emoji": "👍"}).json()
+    assert r1["reactions"] == {"👍": ["u2"]}
+    r2 = auth_client.post(f"{base}/{t['id']}/comments/{cmt['id']}/reactions", json={"emoji": "👍"}).json()
+    assert r2["reactions"] == {"👍": ["u2", "u1"]}
+    r3 = bob.post(f"{base}/{t['id']}/comments/{cmt['id']}/reactions", json={"emoji": "👍"}).json()
+    assert r3["reactions"] == {"👍": ["u1"]}
+
+    # 위키 댓글 리액션 토글
+    wp = auth_client.post(f"/api/projects/{project['id']}/wiki/pages", json={"title": "회고"}).json()
+    wc = auth_client.post(f"/api/projects/{project['id']}/wiki/pages/{wp['id']}/comments", json={"body": "잘 정리됨"}).json()
+    wr = bob.post(f"/api/projects/{project['id']}/wiki/pages/{wp['id']}/comments/{wc['id']}/reactions", json={"emoji": "🚀"}).json()
+    assert wr["reactions"] == {"🚀": ["u2"]}

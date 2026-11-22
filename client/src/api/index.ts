@@ -207,6 +207,7 @@ export const tasksApi = {
   duplicate: (projectId: string, id: string) => http.post<Task>(`/projects/${projectId}/tasks/${id}/duplicate`),
   move: (projectId: string, id: string, targetProjectId: string) =>
     http.post<Task>(`/projects/${projectId}/tasks/${id}/move`, { target_project_id: targetProjectId }),
+  toggleWatch: (projectId: string, id: string) => http.post<Task>(`/projects/${projectId}/tasks/${id}/watch`),
   bulk: (projectId: string, body: TaskBulkRequest) => http.post<TaskBulkResult>(`/projects/${projectId}/tasks/bulk`, body),
   subtasks: (projectId: string, id: string) => http.get<Task[]>(`/projects/${projectId}/tasks/${id}/subtasks`),
   links: (projectId: string, id: string) => http.get<TaskLink[]>(`/projects/${projectId}/tasks/${id}/links`),
@@ -240,6 +241,8 @@ export const commentsApi = {
     http.patch<Comment>(`/projects/${projectId}/tasks/${taskId}/comments/${id}`, { body }),
   remove: (projectId: string, taskId: string, id: string) =>
     http.delete(`/projects/${projectId}/tasks/${taskId}/comments/${id}`),
+  toggleReaction: (projectId: string, taskId: string, id: string, emoji: string) =>
+    http.post<Comment>(`/projects/${projectId}/tasks/${taskId}/comments/${id}/reactions`, { emoji }),
 };
 
 export const wikiApi = {
@@ -263,6 +266,8 @@ export const wikiApi = {
     http.patch<WikiComment>(`/projects/${projectId}/wiki/pages/${id}/comments/${commentId}`, body),
   deleteComment: (projectId: string, id: string, commentId: string) =>
     http.delete(`/projects/${projectId}/wiki/pages/${id}/comments/${commentId}`),
+  toggleCommentReaction: (projectId: string, id: string, commentId: string, emoji: string) =>
+    http.post<WikiComment>(`/projects/${projectId}/wiki/pages/${id}/comments/${commentId}/reactions`, { emoji }),
   links: (projectId: string, id: string) => http.get<PageLinks>(`/projects/${projectId}/wiki/pages/${id}/links`),
   export: (projectId: string, id: string, opts: { format: ExportFormat; children?: boolean; preset?: string; print?: boolean }) => {
     const qs = new URLSearchParams({ format: opts.format });

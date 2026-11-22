@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Response, status
 
 from app.api.deps import AccessDep, CurrentUser, DbDep, ProjectDep, SettingsDep, TaskDep, apply_patch, require
 from app.models.activity import TaskActivity
-from app.models.comment import Comment, CommentCreate, CommentUpdate
+from app.models.comment import ALLOWED_REACTIONS, Comment, CommentCreate, CommentUpdate, ReactionToggle, toggle_reaction_map
 from app.models.member import Permission
 from app.services.events import publish_event
 from app.services.notifications import notify_mentions, notify_user
@@ -32,7 +32,7 @@ def create_comment(project: ProjectDep, task: TaskDep, body: CommentCreate, user
         link=link,
     )
     already = {n.user_id for n in mentioned}
-    for uid in {task.assignee_id, task.created_by}:
+    for uid in {task.assignee_id, task.created_by, *task.watcher_ids}:
         if uid and uid not in already:
             notify_user(
                 db,
@@ -81,6 +81,19 @@ def delete_comment(access: AccessDep, task: TaskDep, comment_id: str, user: Curr
     db.comments.delete(cid)
     publish_event(db, task.project_id, "comment.deleted", {"task_id": task.id, "comment_id": cid})
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/comments/{comment_id}/reactions", response_model=Comment)
+def toggle_comment_reaction(task: TaskDep, comment_id: str, body: ReactionToggle, user: CurrentUser, db: DbDep) -> Comment:
+    if body.emoji not in ALLOWED_REACTIONS:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Unsupported reaction emoji")
+    comment = db.comments.get(comment_id)
+    if comment is None or comment.task_id != task.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Comment not found")
+    updated = comment.model_copy(update={"reactions": toggle_reaction_map(comment.reactions, body.emoji, user.id)})
+    db.comments.update(updated)
+    publish_event(db, task.project_id, "comment.updated", {"task_id": task.id, "comment_id": updated.id})
+    return updated
 
 
 @router.get("/activity", response_model=list[TaskActivity])

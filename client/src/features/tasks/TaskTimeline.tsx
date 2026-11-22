@@ -2,6 +2,7 @@ import { useRef, useState, type KeyboardEvent } from "react";
 import { Avatar } from "../../components/Avatar";
 import { EditorSuggestBar, useEditorSuggest } from "../../components/EditorSuggest";
 import { Markdown } from "../../components/Markdown";
+import { ReactionBar } from "../../components/ReactionBar";
 import { formatDate, timeAgo } from "../../lib/time";
 import type { Comment, PipelineStageInfo, Priority, TaskActivity, User, WikiPageSummary } from "../../types";
 import type { LinkResolver } from "../../lib/wikilinks";
@@ -20,12 +21,13 @@ interface Props {
   onAdd: (body: string) => Promise<void>;
   onEdit: (id: string, body: string) => Promise<void>;
   onRemove: (id: string) => Promise<void>;
+  onToggleReaction?: (id: string, emoji: string) => Promise<void>;
 }
 
 type Entry = { at: string; comment?: Comment; act?: TaskActivity };
 
 /** 덧글 + 변경 이력 타임라인, 하단 덧글 입력창(컴포저) */
-export function TaskTimeline({ comments, activity, users, pages = [], stages, meId, canComment, canModerate, links, onAdd, onEdit, onRemove }: Props) {
+export function TaskTimeline({ comments, activity, users, pages = [], stages, meId, canComment, canModerate, links, onAdd, onEdit, onRemove, onToggleReaction }: Props) {
   const [draft, setDraft] = useState("");
   const [cursor, setCursor] = useState(0);
   const composerRef = useRef<HTMLTextAreaElement>(null);
@@ -151,9 +153,19 @@ export function TaskTimeline({ comments, activity, users, pages = [], stages, me
                     </div>
                   </div>
                 ) : (
-                  <Markdown className="bubble-body" links={links}>
-                    {comment.body}
-                  </Markdown>
+                  <>
+                    <Markdown className="bubble-body" links={links}>
+                      {comment.body}
+                    </Markdown>
+                    {onToggleReaction && (
+                      <ReactionBar
+                        reactions={comment.reactions}
+                        meId={meId}
+                        users={users}
+                        onToggle={(emoji) => onToggleReaction(comment.id, emoji)}
+                      />
+                    )}
+                  </>
                 )}
               </div>
             </li>

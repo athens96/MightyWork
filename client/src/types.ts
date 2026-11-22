@@ -269,6 +269,7 @@ export interface Task {
   subtask_count: number;
   subtask_done: number;
   blocked_by_count?: number; // 미완료 선행(blocks) 일감 수
+  watcher_ids?: string[]; // 일감 구독자(워처) ID 목록
   created_by: string; // 보고자
   via_client?: string | null; // MCP AI 에이전트 출처
   created_at: string;
@@ -280,7 +281,7 @@ export interface MyTask extends Task {
   project_name: string;
 }
 
-type TaskServerFields = "id" | "project_id" | "number" | "created_by" | "created_at" | "updated_at" | "comment_count" | "subtask_count" | "subtask_done" | "blocked_by_count";
+type TaskServerFields = "id" | "project_id" | "number" | "created_by" | "created_at" | "updated_at" | "comment_count" | "subtask_count" | "subtask_done" | "blocked_by_count" | "watcher_ids";
 export type TaskCreate = Pick<Task, "title"> & Partial<Omit<Task, TaskServerFields>>;
 export type TaskUpdate = Partial<Omit<Task, TaskServerFields>>;
 
@@ -329,6 +330,7 @@ export interface WikiComment {
   body: string;
   resolved: boolean;
   resolved_by: string | null;
+  reactions?: Record<string, string[]>;
   via_client?: string | null;
   created_at: string;
   updated_at: string;
@@ -412,6 +414,7 @@ export interface Comment {
   task_id: string;
   author_id: string;
   body: string; // Markdown
+  reactions?: Record<string, string[]>;
   via_client?: string | null;
   created_at: string;
   updated_at: string;
@@ -499,7 +502,7 @@ export interface NotificationItem {
   user_id: string;
   project_id: string;
   actor_id: string;
-  kind: "mention" | "assigned" | "comment" | "ownership" | "invite";
+  kind: "mention" | "assigned" | "comment" | "ownership" | "invite" | "watched";
   title: string;
   body: string;
   link: string;

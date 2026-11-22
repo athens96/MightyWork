@@ -4,7 +4,7 @@ import { attachmentsApi, commentsApi, githubApi, tasksApi, wikiApi } from "../..
 import { ApiError, saveBlob } from "../../api/http";
 import { useAuth } from "../../auth/AuthContext";
 import { EditorSuggestBar, useEditorSuggest } from "../../components/EditorSuggest";
-import { CloseIcon, DocIcon, EditIcon, LinkIcon, PaperclipIcon, StarIcon } from "../../components/icons";
+import { BellIcon, CloseIcon, DocIcon, EditIcon, LinkIcon, PaperclipIcon, StarIcon } from "../../components/icons";
 import { RefreshButton } from "../../components/RefreshButton";
 import { makeBranchName } from "../../lib/branchName";
 import { clearDraft, loadDraft, saveDraft, useBeforeUnloadWarning, type SavedDraft } from "../../lib/draftStorage";
@@ -379,6 +379,21 @@ export function TaskDetailPanel() {
     setDesc(null);
   };
 
+  const toggleWatch = async () => {
+    if (!task || opsBusy) return;
+    setOpsBusy(true);
+    try {
+      const updated = await tasksApi.toggleWatch(project.id, task.id);
+      setTask(updated);
+      onChanged(updated);
+    } finally {
+      setOpsBusy(false);
+    }
+  };
+
+  const isWatching = Boolean(task && me && (task.watcher_ids ?? []).includes(me.id));
+  const watcherCount = task?.watcher_ids?.length ?? 0;
+
   const taskKey = task ? `${project.key}-${task.number}` : "";
   const parentTask = task?.parent_id ? tasks.find((t) => t.id === task.parent_id) : undefined;
   const linkCandidates = tasks.filter((t) => t.id !== task?.id);
@@ -454,6 +469,19 @@ export function TaskDetailPanel() {
                 </div>
               )}
             </div>
+          )}
+          {task && (
+            <button
+              type="button"
+              className={`btn btn-sm ${isWatching ? "btn-accent" : "btn-ghost"}`}
+              aria-pressed={isWatching}
+              disabled={opsBusy}
+              onClick={toggleWatch}
+              title={isWatching ? "일감 알림 구독 해제" : "이 일감의 변경·덧글 알림 구독"}
+            >
+              <BellIcon size={12} /> {isWatching ? "구독 중" : "구독"}
+              {watcherCount > 0 && <span className="mono">{watcherCount}</span>}
+            </button>
           )}
           {task && (
             <button
@@ -879,6 +907,10 @@ export function TaskDetailPanel() {
                 onRemove={async (id) => {
                   await commentsApi.remove(project.id, task.id, id);
                   syncCount(comments.filter((c) => c.id !== id));
+                }}
+                onToggleReaction={async (id, emoji) => {
+                  const updated = await commentsApi.toggleReaction(project.id, task.id, id, emoji);
+                  setComments((prev) => prev.map((c) => (c.id === id ? updated : c)));
                 }}
               />
             </div>

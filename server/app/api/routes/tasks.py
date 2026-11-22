@@ -500,6 +500,24 @@ def update_task(project: ProjectDep, task: TaskDep, body: TaskUpdate, user: Curr
             title=f"{key} '{updated.title}' 일감이 배정되었습니다",
             link=link,
         )
+    if updated.watcher_ids and (updated.stage != task.stage or updated.assignee_id != task.assignee_id or updated.due_date != task.due_date):
+        already_notified = {updated.assignee_id} if updated.assignee_id != task.assignee_id else set()
+        reason = (
+            f"단계가 '{PIPELINE_LABELS[updated.stage]}'(으)로 변경되었습니다"
+            if updated.stage != task.stage
+            else "속성이 변경되었습니다"
+        )
+        for wid in updated.watcher_ids:
+            if wid and wid not in already_notified:
+                notify_user(
+                    db,
+                    user_id=wid,
+                    project_id=project.id,
+                    actor_id=user.id,
+                    kind="watched",
+                    title=f"[구독] {key} '{updated.title}' {reason}",
+                    link=link,
+                )
     if updated.description != task.description:
         notify_mentions(
             db,
@@ -548,6 +566,20 @@ def delete_task(project: ProjectDep, task: TaskDep, user: CurrentUser, db: DbDep
     )
     publish_event(db, project.id, "task.deleted", {"task_id": task.id})
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/{task_id}/watch", response_model=TaskRead)
+def toggle_watch_task(project: ProjectDep, task: TaskDep, user: CurrentUser, db: DbDep) -> TaskRead:
+    """현재 사용자의 일감 구독(워처) 상태를 토글한다."""
+    watchers = list(task.watcher_ids)
+    if user.id in watchers:
+        watchers = [w for w in watchers if w != user.id]
+    else:
+        watchers.append(user.id)
+    updated = task.model_copy(update={"watcher_ids": watchers})
+    db.tasks.update(updated)
+    publish_event(db, project.id, "task.updated", {"task_id": updated.id})
+    return _read(db, updated)
 
 
 @router.post("/{task_id}/duplicate", response_model=TaskRead, status_code=status.HTTP_201_CREATED, dependencies=[require(Permission.CREATE)])

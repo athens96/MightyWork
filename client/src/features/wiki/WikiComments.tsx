@@ -2,6 +2,7 @@ import { useRef, useState, type KeyboardEvent } from "react";
 import { Avatar } from "../../components/Avatar";
 import { EditorSuggestBar, useEditorSuggest } from "../../components/EditorSuggest";
 import { Markdown } from "../../components/Markdown";
+import { ReactionBar } from "../../components/ReactionBar";
 import { timeAgo } from "../../lib/time";
 import type { LinkResolver } from "../../lib/wikilinks";
 import type { User, WikiComment, WikiPageSummary } from "../../types";
@@ -18,9 +19,10 @@ interface Props {
   onAdd: (body: string) => Promise<void>;
   onUpdate: (id: string, patch: { body?: string; resolved?: boolean }) => Promise<void>;
   onRemove: (id: string) => Promise<void>;
+  onToggleReaction?: (id: string, emoji: string) => Promise<void>;
 }
 
-/** 위키 페이지 하단 토론 댓글 (해결/재오픈 토글 · @멘션 · [[위키]] 지원) */
+/** 위키 페이지 하단 토론 댓글 (해결/재오픈 토글 · 이모지 리액션 · @멘션 · [[위키]] 지원) */
 export function WikiComments({
   comments,
   users,
@@ -33,6 +35,7 @@ export function WikiComments({
   onAdd,
   onUpdate,
   onRemove,
+  onToggleReaction,
 }: Props) {
   const [filter, setFilter] = useState<"open" | "all">("open");
   const [draft, setDraft] = useState("");
@@ -170,9 +173,19 @@ export function WikiComments({
                       </div>
                     </div>
                   ) : (
-                    <Markdown className="bubble-body" links={links}>
-                      {c.body}
-                    </Markdown>
+                    <>
+                      <Markdown className="bubble-body" links={links}>
+                        {c.body}
+                      </Markdown>
+                      {onToggleReaction && (
+                        <ReactionBar
+                          reactions={c.reactions}
+                          meId={meId}
+                          users={users}
+                          onToggle={(emoji) => onToggleReaction(c.id, emoji)}
+                        />
+                      )}
+                    </>
                   )}
                 </div>
               </li>

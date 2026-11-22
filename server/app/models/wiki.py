@@ -77,7 +77,7 @@ class WikiPageUpdate(BaseModel):
 
 
 class WikiComment(Entity):
-    """위키 페이지 토론 댓글 (해결/재오픈 상태 포함)."""
+    """위키 페이지 토론 댓글 (해결/재오픈 상태 · 이모지 리액션 포함)."""
 
     project_id: str
     page_id: str
@@ -85,6 +85,7 @@ class WikiComment(Entity):
     body: str  # Markdown
     resolved: bool = False
     resolved_by: str | None = None
+    reactions: dict[str, list[str]] = {}
     via_client: str | None = None
 
 

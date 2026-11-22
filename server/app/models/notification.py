@@ -4,7 +4,7 @@ from typing import Literal
 
 from app.models.common import Entity
 
-NotificationKind = Literal["mention", "assigned", "comment", "ownership", "invite"]
+NotificationKind = Literal["mention", "assigned", "comment", "ownership", "invite", "watched"]
 
 
 class Notification(Entity):

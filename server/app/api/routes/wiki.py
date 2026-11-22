@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException, Query, Response, status
 
 from app.api.deps import AccessDep, CurrentUser, DbDep, ProjectDep, apply_patch, require
 from app.db import Database
+from app.models.comment import ALLOWED_REACTIONS, ReactionToggle, toggle_reaction_map
 from app.models.common import utcnow
 from app.models.member import Permission
 from app.models.project import Project
@@ -278,6 +279,27 @@ def delete_page_comment(
     db.wiki_comments.delete(comment_id)
     publish_event(db, project.id, "wiki.comment_deleted", {"page_id": page_id, "comment_id": comment_id})
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/{page_id}/comments/{comment_id}/reactions", response_model=WikiComment)
+def toggle_page_comment_reaction(
+    project: ProjectDep,
+    page_id: str,
+    comment_id: str,
+    body: ReactionToggle,
+    user: CurrentUser,
+    db: DbDep,
+) -> WikiComment:
+    _get_or_404(db, project, page_id)
+    if body.emoji not in ALLOWED_REACTIONS:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Unsupported reaction emoji")
+    comment = db.wiki_comments.get(comment_id)
+    if comment is None or comment.page_id != page_id or comment.project_id != project.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Comment not found")
+    updated = comment.model_copy(update={"reactions": toggle_reaction_map(comment.reactions, body.emoji, user.id)})
+    db.wiki_comments.update(updated)
+    publish_event(db, project.id, "wiki.comment_updated", {"page_id": page_id, "comment_id": updated.id})
+    return updated
 
 
 # ---------------------------------------------------------------- 버전 히스토리
