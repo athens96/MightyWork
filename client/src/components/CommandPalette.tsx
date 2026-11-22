@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { searchApi } from "../api";
 import { useNavBookmarks } from "../lib/recentsAndPins";
 import { BoardIcon, ClockIcon, DocIcon, FolderIcon, PlusIcon, SearchIcon, StarIcon } from "./icons";
-import type { Project, SearchHit } from "../types";
+import type { GlobalSearchHit, Project } from "../types";
 
 interface CmdItem {
   id: string;
@@ -28,7 +28,7 @@ interface Props {
 export function CommandPalette({ open, onClose, projects, activeProjectId, onQuickCreate, onToggleTheme, onShowShortcuts }: Props) {
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
-  const [hits, setHits] = useState<SearchHit[]>([]);
+  const [hits, setHits] = useState<GlobalSearchHit[]>([]);
   const [index, setIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const { pins, recents } = useNavBookmarks();
@@ -44,14 +44,14 @@ export function CommandPalette({ open, onClose, projects, activeProjectId, onQui
   }, [open]);
 
   useEffect(() => {
-    if (!open || !activeProjectId || !query.trim()) {
+    if (!open || !query.trim()) {
       setHits([]);
       return;
     }
     let cancelled = false;
     const timer = setTimeout(() => {
-      searchApi.search(activeProjectId, query.trim()).then(
-        (res) => !cancelled && setHits(res.slice(0, 8)),
+      searchApi.global(query.trim(), activeProjectId).then(
+        (res) => !cancelled && setHits(res.slice(0, 10)),
         () => !cancelled && setHits([]),
       );
     }, 120);
@@ -126,15 +126,15 @@ export function CommandPalette({ open, onClose, projects, activeProjectId, onQui
     }));
 
     const searchItems: CmdItem[] = hits.map((h) => ({
-      id: `hit-${h.kind}-${h.id}`,
-      group: activeProject ? `${activeProject.key} 검색 결과` : "검색 결과",
-      label: h.kind === "task" && h.number && activeProject ? `${activeProject.key}-${h.number} ${h.title}` : h.title,
-      hint: h.kind === "task" ? "일감" : "위키",
+      id: `hit-${h.project_id}-${h.kind}-${h.id}`,
+      group: "통합 검색",
+      label: h.kind === "task" && h.number ? `${h.project_key}-${h.number} ${h.title}` : h.title,
+      hint: `${h.project_key} · ${h.kind === "task" ? "일감" : "위키"}`,
       icon: h.kind,
       run: go(
         h.kind === "task"
-          ? `/projects/${activeProjectId}/tasks/${h.id}`
-          : `/projects/${activeProjectId}/wiki/${h.id}`,
+          ? `/projects/${h.project_id}/tasks/${h.id}`
+          : `/projects/${h.project_id}/wiki/${h.id}`,
       ),
     }));
 
@@ -201,7 +201,7 @@ export function CommandPalette({ open, onClose, projects, activeProjectId, onQui
                 items[index].run();
               }
             }}
-            placeholder={activeProject ? `${activeProject.key} 일감·위키 검색 또는 명령 입력…` : "프로젝트 이동 또는 명령 입력…"}
+            placeholder="전 프로젝트 일감·위키 검색 또는 명령 입력…"
           />
           <kbd>ESC</kbd>
         </div>

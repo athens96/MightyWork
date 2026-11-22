@@ -174,3 +174,25 @@ def test_graph_requires_membership(app, auth_client, pid):
     p = page(auth_client, pid, "문서")
     bob = login(app, "u2:bob@example.com")
     assert bob.get(f"/api/projects/{pid}/wiki/pages/{p['id']}/graph").status_code == 404
+
+
+def test_global_search_across_accessible_projects(app, auth_client, pid):
+    other = auth_client.post("/api/projects", json={"key": "OT", "name": "Other"}).json()
+    t1 = auth_client.post(f"/api/projects/{pid}/tasks", json={"title": "배포 자동화 점검"}).json()
+    w2 = page(auth_client, other["id"], "배포 자동화 런북", "롤백 절차")
+
+    hits = auth_client.get("/api/search", params={"q": "배포 자동화"}).json()
+    assert {(h["project_key"], h["kind"], h["id"]) for h in hits} == {
+        ("MW", "task", t1["id"]),
+        ("OT", "wiki", w2["id"]),
+    }
+
+    # prefer_project_id 로 지정된 프로젝트가 동점 시 우선
+    prefer_other = auth_client.get("/api/search", params={"q": "배포 자동화", "prefer_project_id": other["id"]}).json()
+    assert prefer_other[0]["project_key"] == "OT"
+
+    # 접근 권한이 없는 프로젝트 결과는 노출되지 않음
+    bob = login(app, "u2:bob@example.com")
+    auth_client.post(f"/api/projects/{other['id']}/members", json={"email": "bob@example.com", "permissions": ["view"]})
+    bob_hits = bob.get("/api/search", params={"q": "배포 자동화"}).json()
+    assert [h["project_key"] for h in bob_hits] == ["OT"]

@@ -14,6 +14,7 @@ import type {
   ExtractResult,
   GitHubConfig,
   GitHubLink,
+  GlobalSearchHit,
   GlossaryTerm,
   GlossaryUsage,
   IntakeConfig,
@@ -223,6 +224,11 @@ export const tasksApi = {
 export const searchApi = {
   search: (projectId: string, q: string) =>
     http.get<SearchHit[]>(`/projects/${projectId}/search?${new URLSearchParams({ q })}`),
+  global: (q: string, preferProjectId?: string) => {
+    const qs = new URLSearchParams({ q });
+    if (preferProjectId) qs.set("prefer_project_id", preferProjectId);
+    return http.get<GlobalSearchHit[]>(`/search?${qs}`);
+  },
 };
 
 export const commentsApi = {

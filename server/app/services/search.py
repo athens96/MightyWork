@@ -22,6 +22,12 @@ class SearchHit(BaseModel):
     stage: str | None = None  # 일감 단계
 
 
+class GlobalSearchHit(SearchHit):
+    project_id: str
+    project_key: str
+    project_name: str
+
+
 _WIKI_LINK = re.compile(r"\[\[([^\[\]|\n]+?)(?:\|([^\[\]\n]*))?\]\]")
 
 
@@ -94,3 +100,31 @@ def search(db: Database, project: Project, query: str, limit: int = 30) -> list[
             hits.append(SearchHit(kind="wiki", id=p.id, title=p.title, snippet=_snippet(p.content, q), score=score))
 
     return sorted(hits, key=lambda h: -h.score)[:limit]
+
+
+def search_global(
+    db: Database,
+    projects: list[Project],
+    query: str,
+    limit: int = 20,
+    *,
+    prefer_project_id: str | None = None,
+) -> list[GlobalSearchHit]:
+    """접근 가능한 모든 프로젝트에서 일감·위키를 통합 검색한다."""
+    q = " ".join(query.split()).casefold()
+    if not q or not projects:
+        return []
+    combined: list[GlobalSearchHit] = []
+    for p in projects:
+        bonus = 0.5 if prefer_project_id and p.id == prefer_project_id else 0.0
+        for h in search(db, p, q, limit):
+            combined.append(
+                GlobalSearchHit(
+                    **h.model_dump(exclude={"score"}),
+                    score=h.score + bonus,
+                    project_id=p.id,
+                    project_key=p.key,
+                    project_name=p.name,
+                )
+            )
+    return sorted(combined, key=lambda h: -h.score)[:limit]

@@ -23,10 +23,25 @@ from app.services.links import (
     project_pages,
     task_numbers,
 )
+from app.services.access import accessible_projects
 from app.services.graph import LocalGraph, local_graph
-from app.services.search import SearchHit, search
+from app.services.search import GlobalSearchHit, SearchHit, search, search_global
 
+global_router = APIRouter(tags=["knowledge"])
 router = APIRouter(prefix="/projects/{project_id}", tags=["knowledge"])
+
+
+@global_router.get("/search", response_model=list[GlobalSearchHit])
+def global_search(
+    user: CurrentUser,
+    db: DbDep,
+    q: str = Query(min_length=1, max_length=200),
+    limit: int = Query(20, ge=1, le=50),
+    prefer_project_id: str | None = None,
+) -> list[GlobalSearchHit]:
+    """내가 접근 가능한 모든 프로젝트에서 일감·위키 통합 검색."""
+    projects = [a.project for a in accessible_projects(db, user)]
+    return search_global(db, projects, q, limit, prefer_project_id=prefer_project_id)
 
 
 class OutgoingLink(BaseModel):

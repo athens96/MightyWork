@@ -117,6 +117,7 @@ def create_app(settings: Settings | None = None, db: Database | None = None) -> 
     api.include_router(wiki.router)
     api.include_router(attachments.router)
     api.include_router(notifications.router)
+    api.include_router(knowledge.global_router)
     api.include_router(knowledge.router)
     api.include_router(knowledge_base.router)
     api.include_router(github.router)

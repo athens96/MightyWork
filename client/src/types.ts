@@ -359,6 +359,12 @@ export interface SearchHit {
   stage: PipelineStage | null;
 }
 
+export interface GlobalSearchHit extends SearchHit {
+  project_id: string;
+  project_key: string;
+  project_name: string;
+}
+
 export interface UnlinkedMention {
   source_type: "wiki" | "task";
   source_id: string;
