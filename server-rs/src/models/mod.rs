@@ -1,3 +1,6 @@
+pub mod phase2;
+pub use phase2::*;
+
 use std::collections::HashMap;
 
 use chrono::{DateTime, NaiveDate, Utc};
@@ -673,6 +676,19 @@ pub enum PageType {
     Note,
 }
 
+impl PageType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            PageType::Guide => "guide",
+            PageType::Spec => "spec",
+            PageType::Decision => "decision",
+            PageType::Meeting => "meeting",
+            PageType::Reference => "reference",
+            PageType::Note => "note",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PageStatus {
@@ -680,6 +696,17 @@ pub enum PageStatus {
     Review,
     Published,
     Deprecated,
+}
+
+impl PageStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            PageStatus::Draft => "draft",
+            PageStatus::Review => "review",
+            PageStatus::Published => "published",
+            PageStatus::Deprecated => "deprecated",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

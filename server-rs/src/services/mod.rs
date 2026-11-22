@@ -1,7 +1,13 @@
 pub mod access;
 pub mod audit;
 pub mod events;
+pub mod export;
+pub mod graph;
+pub mod knowledge_extract;
+pub mod knowledge_qa;
 pub mod links;
 pub mod notifications;
+pub mod releases;
+pub mod search;
 pub mod tasks;
 pub mod wiki_revisions;

@@ -230,7 +230,7 @@ fn validate_parent(db: &Database, project_id: &str, task_id: Option<&str>, paren
 fn validate_cycle(db: &Database, project_id: &str, cycle_id: Option<&str>) -> ApiResult<()> {
     if let Some(cid) = cycle_id {
         let c = db.cycles.get(cid)?;
-        if c.as_ref().and_then(|x| x.project_id.as_deref()) != Some(project_id) {
+        if c.as_ref().map(|x| x.project_id.as_str()) != Some(project_id) {
             return Err(ApiError::bad_request("Cycle not found"));
         }
     }
@@ -240,7 +240,7 @@ fn validate_cycle(db: &Database, project_id: &str, cycle_id: Option<&str>) -> Ap
 fn validate_milestone(db: &Database, project_id: &str, milestone_id: Option<&str>) -> ApiResult<()> {
     if let Some(mid) = milestone_id {
         let m = db.milestones.get(mid)?;
-        if m.as_ref().and_then(|x| x.project_id.as_deref()) != Some(project_id) {
+        if m.as_ref().map(|x| x.project_id.as_str()) != Some(project_id) {
             return Err(ApiError::bad_request("Milestone not found"));
         }
     }
@@ -1152,8 +1152,8 @@ async fn move_task_to_project(
         state.db.task_activities.update(&a)?;
     }
     for mut att in state.db.attachments.list_by_project(&access.project.id)? {
-        if att.extra.get("task_id").and_then(|v| v.as_str()) == Some(&task.id) {
-            att.project_id = Some(target.id.clone());
+        if att.task_id.as_deref() == Some(&task.id) {
+            att.project_id = target.id.clone();
             state.db.attachments.update(&att)?;
         }
     }

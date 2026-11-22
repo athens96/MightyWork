@@ -8,7 +8,7 @@ pub mod services;
 
 use std::sync::Arc;
 
-use axum::extract::State;
+use axum::extract::{DefaultBodyLimit, State};
 use axum::http::{header, HeaderValue, Method};
 use axum::middleware;
 use axum::response::IntoResponse;
@@ -101,10 +101,22 @@ pub fn create_app(state: AppState) -> Router {
         .merge(routes::tasks::router())
         .merge(routes::comments::router())
         .merge(routes::wiki::router())
-        .merge(routes::trash::router());
+        .merge(routes::trash::router())
+        .merge(routes::events::router())
+        .merge(routes::knowledge::router())
+        .merge(routes::knowledge_base::router())
+        .merge(routes::cycles::router())
+        .merge(routes::milestones::router())
+        .merge(routes::releases::router())
+        .merge(routes::triage::router())
+        .merge(routes::views::router())
+        .merge(routes::templates::router())
+        .merge(routes::attachments::router())
+        .merge(routes::export::router());
 
     Router::new()
         .nest("/api", api)
+        .layer(DefaultBodyLimit::max(25 * 1024 * 1024))
         .layer(middleware::from_fn(security_headers))
         .layer(cors)
         .with_state(state)
