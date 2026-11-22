@@ -11,7 +11,8 @@ concurrency:
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    # Ubuntu 22.04 (glibc 2.35) builds binaries compatible with both Ubuntu 22.04 and 24.04 VMs
+    runs-on: ubuntu-22.04
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -28,6 +29,18 @@ jobs:
         run: |
           npm ci
           npm test
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: server-rs
+
+      - name: Run Rust server tests
+        working-directory: server-rs
+        run: cargo test
 
       - name: Configure SSH
         env:
@@ -46,6 +59,27 @@ jobs:
           fi
           chmod 644 ~/.ssh/known_hosts
 
+      - name: Build Rust release binary for remote VM architecture
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+        run: |
+          VM_ARCH=$(ssh -i ~/.ssh/deploy_key -o BatchMode=yes "$DEPLOY_HOST" uname -m)
+          echo "Remote VM arch: $VM_ARCH"
+          if [ "$VM_ARCH" = "aarch64" ] || [ "$VM_ARCH" = "arm64" ]; then
+            sudo apt-get update -qq
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq gcc-aarch64-linux-gnu
+            rustup target add aarch64-unknown-linux-gnu
+            CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc \
+            CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc \
+              cargo build --release --manifest-path server-rs/Cargo.toml --target aarch64-unknown-linux-gnu
+            BIN_PATH="server-rs/target/aarch64-unknown-linux-gnu/release/mightywork-server"
+          else
+            cargo build --release --manifest-path server-rs/Cargo.toml
+            BIN_PATH="server-rs/target/release/mightywork-server"
+          fi
+          ls -lh "$BIN_PATH"
+          echo "RUST_BIN_PATH=$BIN_PATH" >> "$GITHUB_ENV"
+
       - name: Deploy with scripts/deploy.sh
         env:
           DEPLOY_YES: "1"
@@ -56,11 +90,15 @@ jobs:
           ./scripts/deploy.sh
           ./scripts/deploy.sh status
 
-      - name: Verify live version
+      - name: Verify live Rust API & OAuth/MCP endpoints
         run: |
           curl -fsS --max-time 15 https://mightywork.duckdns.org/api/health
           echo ""
           curl -fsS --max-time 15 https://mightywork.duckdns.org/api/version
+          echo ""
+          curl -fsS --max-time 15 https://mightywork.duckdns.org/.well-known/oauth-authorization-server | head -c 200
+          echo ""
+          curl -fsS --max-time 15 https://mightywork.duckdns.org/.well-known/oauth-protected-resource/mcp
           echo ""
 
       - name: Cleanup SSH key

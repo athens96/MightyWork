@@ -397,6 +397,100 @@ impl SqliteEngine {
         }
     }
 
+    pub fn put_oauth_pending(&self, id: &str, payload: &str, ttl_sec: f64) -> rusqlite::Result<()> {
+        let now = unix_now();
+        let con = self.conn.lock().unwrap();
+        con.execute("DELETE FROM oauth_pending WHERE expires <= ?1", params![now])?;
+        con.execute(
+            "INSERT OR REPLACE INTO oauth_pending (id, payload, expires) VALUES (?1, ?2, ?3)",
+            params![id, payload, now + ttl_sec],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_oauth_pending(&self, id: &str) -> rusqlite::Result<Option<String>> {
+        let now = unix_now();
+        let con = self.conn.lock().unwrap();
+        con.execute("DELETE FROM oauth_pending WHERE expires <= ?1", params![now])?;
+        con.query_row(
+            "SELECT payload FROM oauth_pending WHERE id = ?1 AND expires > ?2",
+            params![id, now],
+            |r| r.get(0),
+        )
+        .optional()
+    }
+
+    pub fn pop_oauth_pending(&self, id: &str) -> rusqlite::Result<Option<String>> {
+        let now = unix_now();
+        let con = self.conn.lock().unwrap();
+        con.execute_batch("BEGIN IMMEDIATE")?;
+        let res = (|| -> rusqlite::Result<Option<String>> {
+            con.execute("DELETE FROM oauth_pending WHERE expires <= ?1", params![now])?;
+            let row: Option<String> = con
+                .query_row(
+                    "SELECT payload FROM oauth_pending WHERE id = ?1 AND expires > ?2",
+                    params![id, now],
+                    |r| r.get(0),
+                )
+                .optional()?;
+            if row.is_some() {
+                con.execute("DELETE FROM oauth_pending WHERE id = ?1", params![id])?;
+            }
+            Ok(row)
+        })();
+        match res {
+            Ok(v) => {
+                con.execute_batch("COMMIT")?;
+                Ok(v)
+            }
+            Err(e) => {
+                let _ = con.execute_batch("ROLLBACK");
+                Err(e)
+            }
+        }
+    }
+
+    pub fn put_oauth_code(&self, code_hash: &str, payload: &str, ttl_sec: f64) -> rusqlite::Result<()> {
+        let now = unix_now();
+        let con = self.conn.lock().unwrap();
+        con.execute("DELETE FROM oauth_codes WHERE expires <= ?1", params![now])?;
+        con.execute(
+            "INSERT OR REPLACE INTO oauth_codes (code_hash, payload, expires) VALUES (?1, ?2, ?3)",
+            params![code_hash, payload, now + ttl_sec],
+        )?;
+        Ok(())
+    }
+
+    pub fn pop_oauth_code(&self, code_hash: &str) -> rusqlite::Result<Option<String>> {
+        let now = unix_now();
+        let con = self.conn.lock().unwrap();
+        con.execute_batch("BEGIN IMMEDIATE")?;
+        let res = (|| -> rusqlite::Result<Option<String>> {
+            con.execute("DELETE FROM oauth_codes WHERE expires <= ?1", params![now])?;
+            let row: Option<String> = con
+                .query_row(
+                    "SELECT payload FROM oauth_codes WHERE code_hash = ?1 AND expires > ?2",
+                    params![code_hash, now],
+                    |r| r.get(0),
+                )
+                .optional()?;
+            if row.is_some() {
+                con.execute("DELETE FROM oauth_codes WHERE code_hash = ?1", params![code_hash])?;
+            }
+            Ok(row)
+        })();
+        match res {
+            Ok(v) => {
+                con.execute_batch("COMMIT")?;
+                Ok(v)
+            }
+            Err(e) => {
+                let _ = con.execute_batch("ROLLBACK");
+                Err(e)
+            }
+        }
+    }
+
     pub fn raw_list(&self, table: &str, project_id: Option<&str>) -> rusqlite::Result<Vec<String>> {
         let con = self.conn.lock().unwrap();
         let mut out = Vec::new();

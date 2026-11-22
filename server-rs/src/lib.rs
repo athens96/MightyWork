@@ -9,7 +9,7 @@ pub mod services;
 use std::sync::Arc;
 
 use axum::extract::{DefaultBodyLimit, State};
-use axum::http::{header, HeaderValue, Method};
+use axum::http::{header, HeaderName, HeaderValue, Method};
 use axum::middleware;
 use axum::response::IntoResponse;
 use axum::routing::get;
@@ -19,11 +19,11 @@ use tower_http::cors::CorsLayer;
 
 use crate::config::{Settings, APP_VERSION};
 use crate::db::Database;
+use crate::models::OAUTH_SCOPES;
 use crate::routes::deps::security_headers;
 use crate::security::{default_google_verifier, GoogleVerifierFn};
 use crate::services::events::EventBus;
-
-pub const OAUTH_SCOPES: &[&str] = &["mcp:read", "mcp:write"];
+use crate::services::webhooks::WebhookSenderFn;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -31,6 +31,7 @@ pub struct AppState {
     pub db: Database,
     pub events: EventBus,
     pub google_verifier: GoogleVerifierFn,
+    pub webhook_sender: Option<WebhookSenderFn>,
 }
 
 impl AppState {
@@ -40,11 +41,17 @@ impl AppState {
             db,
             events: EventBus::new(),
             google_verifier: default_google_verifier(),
+            webhook_sender: None,
         }
     }
 
     pub fn with_google_verifier(mut self, verifier: GoogleVerifierFn) -> Self {
         self.google_verifier = verifier;
+        self
+    }
+
+    pub fn with_webhook_sender(mut self, sender: WebhookSenderFn) -> Self {
+        self.webhook_sender = Some(sender);
         self
     }
 }
@@ -87,7 +94,14 @@ pub fn create_app(state: AppState) -> Router {
             Method::DELETE,
             Method::OPTIONS,
         ])
-        .allow_headers([header::AUTHORIZATION, header::CONTENT_TYPE, header::ACCEPT]);
+        .allow_headers([
+            header::AUTHORIZATION,
+            header::CONTENT_TYPE,
+            header::ACCEPT,
+            HeaderName::from_static("mcp-session-id"),
+            HeaderName::from_static("last-event-id"),
+        ])
+        .expose_headers([HeaderName::from_static("mcp-session-id")]);
 
     let api = Router::new()
         .route("/health", get(health))
@@ -112,10 +126,15 @@ pub fn create_app(state: AppState) -> Router {
         .merge(routes::views::router())
         .merge(routes::templates::router())
         .merge(routes::attachments::router())
-        .merge(routes::export::router());
+        .merge(routes::export::router())
+        .merge(routes::github::router())
+        .merge(routes::webhooks::router())
+        .merge(routes::oauth::api_router());
 
     Router::new()
         .nest("/api", api)
+        .merge(routes::oauth::public_router())
+        .merge(routes::mcp::router())
         .layer(DefaultBodyLimit::max(25 * 1024 * 1024))
         .layer(middleware::from_fn(security_headers))
         .layer(cors)

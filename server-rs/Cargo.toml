@@ -36,3 +36,8 @@ rand = "0.8"
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
 tempfile = "3"
+
+[profile.release]
+strip = true
+lto = "thin"
+codegen-units = 1

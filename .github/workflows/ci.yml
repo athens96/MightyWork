@@ -6,6 +6,22 @@ on:
   pull_request:
 
 jobs:
+  server-rs:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server-rs
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: server-rs
+      - name: Run Rust integration tests
+        run: cargo test
+      - name: Check release build
+        run: cargo build --release
+
   server:
     runs-on: ubuntu-latest
     defaults:

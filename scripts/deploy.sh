@@ -58,6 +58,12 @@ cmd_update() {
   say "클라이언트 빌드"
   (cd client && npm run build >/dev/null)
 
+  if [ -n "${RUST_BIN_PATH:-}" ] && [ -f "$RUST_BIN_PATH" ]; then
+    say "Rust 서버 바이너리 업로드"
+    "${SSH[@]}" "mkdir -p $APP_DIR/server-rs"
+    rsync -az -e "ssh -i $DEPLOY_KEY -o BatchMode=yes" "$RUST_BIN_PATH" "$DEPLOY_HOST:$APP_DIR/server-rs/mightywork-server.new"
+  fi
+
   say "서버 업데이트"
   remote <<'EOF'
 cd "$APP_DIR" && git pull -q --ff-only && git log --oneline -1

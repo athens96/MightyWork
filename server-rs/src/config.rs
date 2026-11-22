@@ -199,11 +199,15 @@ impl Settings {
         s
     }
 
-    pub fn issuer(&self) -> String {
+    pub fn base_url(&self) -> String {
         self.public_url.trim_end_matches('/').to_string()
     }
 
+    pub fn issuer(&self) -> String {
+        format!("{}/", self.base_url())
+    }
+
     pub fn resource_url(&self) -> String {
-        format!("{}/mcp", self.issuer())
+        format!("{}/mcp", self.base_url())
     }
 }

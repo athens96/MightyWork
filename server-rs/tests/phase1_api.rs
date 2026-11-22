@@ -146,7 +146,7 @@ async fn health_version_mcp_info_and_security_headers() {
     let (status, _, body) = app.req(Method::GET, "/api/mcp-info", None, None, &[]).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["url"], "https://mightywork.test/mcp");
-    assert_eq!(body["issuer"], "https://mightywork.test");
+    assert_eq!(body["issuer"], "https://mightywork.test/");
 }
 
 #[tokio::test]

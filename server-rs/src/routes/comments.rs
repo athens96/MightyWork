@@ -129,6 +129,29 @@ async fn create_comment(
         "comment.created",
         json!({ "task_id": task.id, "comment_id": comment.id }),
     );
+    let abs_link = format!("{}{}", state.settings.app_url.trim_end_matches('/'), link);
+    crate::services::webhooks::dispatch_project_webhooks(
+        &state.db,
+        state.webhook_sender.clone(),
+        &access.project,
+        "comment.created",
+        format!("{key} '{}' 새 덧글", task.title),
+        excerpt.clone(),
+        abs_link.clone(),
+        Some(json!({ "task_id": task.id, "key": key, "comment_id": comment.id, "tags": task.tags, "stage": task.stage.as_str() })),
+    );
+    if !already.is_empty() {
+        crate::services::webhooks::dispatch_project_webhooks(
+            &state.db,
+            state.webhook_sender.clone(),
+            &access.project,
+            "mention",
+            format!("{key} '{}' 덧글 멘션", task.title),
+            excerpt,
+            abs_link,
+            Some(json!({ "task_id": task.id, "key": key, "comment_id": comment.id, "tags": task.tags, "stage": task.stage.as_str() })),
+        );
+    }
     Ok((StatusCode::CREATED, Json(comment)))
 }
 

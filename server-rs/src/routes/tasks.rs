@@ -23,6 +23,7 @@ use crate::services::events::publish_event;
 use crate::services::links::{link_targets, norm_title, pages_by_title, project_pages};
 use crate::services::notifications::{notify_mentions, notify_user};
 use crate::services::tasks::{delete_task_cascade, record_changes, record_created, soft_delete_task};
+use crate::services::webhooks::dispatch_project_webhooks;
 use crate::AppState;
 
 pub fn router() -> Router<AppState> {
@@ -614,6 +615,20 @@ async fn create_task(
         "task.created",
         json!({ "task_id": task.id, "stage": task.stage.as_str() }),
     );
+    dispatch_project_webhooks(
+        &state.db,
+        state.webhook_sender.clone(),
+        &access.project,
+        "task.created",
+        format!("{key} '{}' 생성", task.title),
+        format!(
+            "단계: {} · 레이블: {}",
+            task.stage.label(),
+            if task.tags.is_empty() { "없음".into() } else { task.tags.join(", ") }
+        ),
+        format!("{}{}", state.settings.app_url.trim_end_matches('/'), link),
+        Some(json!({ "task_id": task.id, "key": key, "stage": task.stage.as_str(), "tags": task.tags })),
+    );
     Ok((
         StatusCode::CREATED,
         Json(build_task_read(&state.db, task, Some(0), Some((0, 0)), Some(0))?),
@@ -928,6 +943,46 @@ async fn update_task(
         "task.updated",
         json!({ "task_id": updated.id, "stage": updated.stage.as_str() }),
     );
+    let abs_link = format!("{}{}", state.settings.app_url.trim_end_matches('/'), link);
+    if updated.stage != task.stage {
+        dispatch_project_webhooks(
+            &state.db,
+            state.webhook_sender.clone(),
+            &access.project,
+            "task.stage_changed",
+            format!("{key} '{}' 단계 변경", updated.title),
+            format!("{} → {}", task.stage.label(), updated.stage.label()),
+            abs_link.clone(),
+            Some(json!({
+                "task_id": updated.id,
+                "key": key,
+                "from": task.stage.as_str(),
+                "stage": updated.stage.as_str(),
+                "tags": updated.tags,
+            })),
+        );
+    }
+    if updated.tags != task.tags || updated.stage != task.stage {
+        dispatch_project_webhooks(
+            &state.db,
+            state.webhook_sender.clone(),
+            &access.project,
+            "task.updated",
+            format!("{key} '{}' 변경", updated.title),
+            format!(
+                "단계: {} · 레이블: {}",
+                updated.stage.label(),
+                if updated.tags.is_empty() { "없음".into() } else { updated.tags.join(", ") }
+            ),
+            abs_link,
+            Some(json!({
+                "task_id": updated.id,
+                "key": key,
+                "stage": updated.stage.as_str(),
+                "tags": updated.tags,
+            })),
+        );
+    }
     Ok(Json(build_task_read(&state.db, updated, None, None, None)?))
 }
 

@@ -7,10 +7,11 @@ use serde_json::Value;
 
 use crate::db::sqlite::{SqliteEngine, SqliteRepo};
 use crate::models::{
-    Attachment, AuditLog, Comment, Cycle, GenericEntity, GlossaryTerm, KnowledgeEntity,
-    KnowledgeRelation, Milestone, Notification, Project, ProjectIntake, ProjectMember,
-    ProjectPipeline, SavedView, Task, TaskActivity, TaskLink, TaskTemplate, User, WikiComment,
-    WikiPage, WikiRevision,
+    Attachment, AuditLog, Comment, Cycle, GitHubIntegration, GitHubLink, GlossaryTerm,
+    KnowledgeEntity, KnowledgeRelation, Milestone, Notification, OAuthClient, OAuthGrant, Project,
+    ProjectIntake, ProjectMember, ProjectPipeline, ProjectWebhook, RefreshToken, SavedView, Task,
+    TaskActivity, TaskLink, TaskTemplate, User, WebhookDelivery, WikiComment, WikiPage,
+    WikiRevision,
 };
 
 pub const PROJECT_SCOPED_TABLES: &[&str] = &[
@@ -65,14 +66,14 @@ pub struct Database {
     pub glossary_terms: SqliteRepo<GlossaryTerm>,
     pub knowledge_entities: SqliteRepo<KnowledgeEntity>,
     pub knowledge_relations: SqliteRepo<KnowledgeRelation>,
-    pub github_integrations: SqliteRepo<GenericEntity>,
-    pub github_links: SqliteRepo<GenericEntity>,
-    pub project_webhooks: SqliteRepo<GenericEntity>,
-    pub webhook_deliveries: SqliteRepo<GenericEntity>,
+    pub github_integrations: SqliteRepo<GitHubIntegration>,
+    pub github_links: SqliteRepo<GitHubLink>,
+    pub project_webhooks: SqliteRepo<ProjectWebhook>,
+    pub webhook_deliveries: SqliteRepo<WebhookDelivery>,
     pub project_intakes: SqliteRepo<ProjectIntake>,
-    pub oauth_clients: SqliteRepo<GenericEntity>,
-    pub oauth_grants: SqliteRepo<GenericEntity>,
-    pub refresh_tokens: SqliteRepo<GenericEntity>,
+    pub oauth_clients: SqliteRepo<OAuthClient>,
+    pub oauth_grants: SqliteRepo<OAuthGrant>,
+    pub refresh_tokens: SqliteRepo<RefreshToken>,
 }
 
 impl Database {

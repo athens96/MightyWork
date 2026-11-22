@@ -430,7 +430,7 @@ async fn get_intake_config(
             intake_url: String::new(),
         }));
     };
-    let intake_url = format!("{}/api/intake/{}", state.settings.issuer(), cfg.token);
+    let intake_url = format!("{}/api/intake/{}", state.settings.base_url(), cfg.token);
     Ok(Json(IntakeConfigRead {
         enabled: cfg.enabled,
         token: cfg.token,
@@ -469,7 +469,7 @@ async fn update_intake_config(
             existing
         }
     };
-    let intake_url = format!("{}/api/intake/{}", state.settings.issuer(), cfg.token);
+    let intake_url = format!("{}/api/intake/{}", state.settings.base_url(), cfg.token);
     Ok(Json(IntakeConfigRead {
         enabled: cfg.enabled,
         token: cfg.token,

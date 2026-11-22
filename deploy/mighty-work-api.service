@@ -1,17 +1,21 @@
 # /etc/systemd/system/mighty-work-api.service
 [Unit]
-Description=MightyWork API (FastAPI + MCP)
+Description=MightyWork API (Rust axum + MCP)
 After=network.target
 
 [Service]
 User=ubuntu
 WorkingDirectory=/opt/mighty-work/server
 EnvironmentFile=/opt/mighty-work/server/.env
-# kordoc(한글 변환)이 쓰는 node 를 찾도록
+# kordoc(node)·pandoc 을 찾도록 기존 PATH 유지
 Environment=PATH=/opt/mighty-work/server/.venv/bin:/usr/local/bin:/usr/bin:/bin
-# SQLite 저장소·OAuth 저장소는 멀티 워커 안전. 127.0.0.1 에서 nginx 뒤에 둔다 (MightyTrade 는 5001).
-ExecStart=/opt/mighty-work/server/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 2 --proxy-headers --forwarded-allow-ips 127.0.0.1
+Environment=HOST=127.0.0.1
+Environment=PORT=8000
+Environment=RUST_LOG=info
+# 단일 Rust 바이너리가 127.0.0.1:8000 에서 nginx 뒤에 둔다 (SQLite WAL + FTS5 + SSE + MCP)
+ExecStart=/opt/mighty-work/server-rs/mightywork-server
 Restart=always
+RestartSec=1
 
 [Install]
 WantedBy=multi-user.target

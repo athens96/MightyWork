@@ -399,13 +399,13 @@ const TABLE_STYLE: &str = concat!(
 fn find_pandoc(settings: &Settings) -> Option<PathBuf> {
     let candidate = PathBuf::from(&settings.pandoc_bin);
     if candidate.is_file() {
-        return Some(candidate);
+        return std::fs::canonicalize(&candidate).ok().or(Some(candidate));
     }
     if let Ok(path_var) = std::env::var("PATH") {
         for dir in std::env::split_paths(&path_var) {
             let p = dir.join(&settings.pandoc_bin);
             if p.is_file() {
-                return Some(p);
+                return std::fs::canonicalize(&p).ok().or(Some(p));
             }
         }
     }
@@ -421,7 +421,7 @@ fn find_pandoc(settings: &Settings) -> Option<PathBuf> {
                     .path()
                     .join("site-packages/pypandoc/files/pandoc");
                 if p.is_file() {
-                    return Some(p);
+                    return std::fs::canonicalize(&p).ok().or(Some(p));
                 }
             }
         }
@@ -546,17 +546,18 @@ fn find_kordoc_cmd(settings: &Settings) -> Result<(PathBuf, PathBuf), ConvertErr
             .ok_or_else(|| ConvertError::Unavailable("Node.js 를 찾을 수 없습니다 (KORDOC_NODE)".into()))?
     };
     let cli = if settings.kordoc_cli.is_file() {
-        settings.kordoc_cli.clone()
+        std::fs::canonicalize(&settings.kordoc_cli).unwrap_or_else(|_| settings.kordoc_cli.clone())
     } else {
         let alt = PathBuf::from("../server").join(&settings.kordoc_cli);
         if alt.is_file() {
-            alt
+            std::fs::canonicalize(&alt).unwrap_or(alt)
         } else {
             return Err(ConvertError::Unavailable(
                 "kordoc 이 설치되지 않았습니다 — server/tools/kordoc 에서 `npm ci` 를 실행하세요".into(),
             ));
         }
     };
+    let node = std::fs::canonicalize(&node).unwrap_or(node);
     Ok((node, cli))
 }
 
