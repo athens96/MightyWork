@@ -184,7 +184,8 @@ GOOGLE_CLIENT_ID=... JWT_SECRET=$(python3 -c "import secrets; print(secrets.toke
 | `deploy/app.conf` | 앱별 값(경로·도메인·서비스·헬스 체크)과 설치 단계(`remote_prereqs`·`remote_install`·`remote_env`) |
 | `deploy/nginx.conf` | nginx 사이트 템플릿 (처음 설치 때만 복사, 이후 certbot 이 고친 파일 유지) |
 | `deploy/mighty-work-api.service` | systemd 유닛 (바뀌면 업데이트 때 자동 반영) |
-| `deploy/.env.deploy` | 접속 정보 `DEPLOY_HOST`, `DEPLOY_KEY` (git 제외) |
+| `deploy/.env.deploy` | 로컬 수동 배포 접속 정보 `DEPLOY_HOST`, `DEPLOY_KEY` (git 제외) |
+| `.github/workflows/deploy.yml` | `main` 푸시 · 수동 트리거 시 GitHub Actions 자동 배포 (`DEPLOY_HOST`, `DEPLOY_SSH_KEY`, `DEPLOY_KNOWN_HOSTS`, `VITE_GOOGLE_CLIENT_ID` Secrets 사용) |
 
 ```bash
 ./scripts/deploy.sh            # 업데이트: main 에 푸시한 뒤. 서버 git pull·의존성·재시작 + 클라이언트 로컬 빌드 업로드
