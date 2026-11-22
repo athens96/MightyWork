@@ -2305,3 +2305,34 @@ button.tile.fill-run.is-active {
 .wiki-nav {
   overflow: visible;
 }
+
+/* ==========================================================================
+   MW-23: 위키 댓글(토론·해결) 및 동시 편집 충돌 경고
+   ========================================================================== */
+.wiki-comments {
+  margin-top: 28px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.wiki-comments-empty {
+  margin: 8px 0 12px;
+  font-size: 12.5px;
+}
+.tl-comment.is-resolved .bubble {
+  opacity: 0.72;
+  background: var(--card-raised);
+}
+.wiki-conflict-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.wiki-conflict-msg {
+  font-size: 12.5px;
+}
+.wiki-conflict-actions {
+  display: flex;
+  gap: 6px;
+}

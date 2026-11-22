@@ -80,3 +80,66 @@ def test_search_matches_page_tags(auth_client, project):
     p = auth_client.post(base, json={"title": "배포 절차", "tags": ["devops"]}).json()
     hits = auth_client.get(f"/api/projects/{project['id']}/search", params={"q": "devops"}).json()
     assert hits[0]["id"] == p["id"]
+
+
+# ---------------------------------------------------------------- MW-23: 위키 댓글 · 낙관적 잠금
+
+
+def test_wiki_optimistic_lock_detects_concurrent_edit(auth_client, project):
+    base = f"/api/projects/{project['id']}/wiki/pages"
+    p = auth_client.post(base, json={"title": "설계서", "content": "v1"}).json()
+    v1_ts = p["updated_at"]
+
+    # 올바른 expected_updated_at 로 수정 성공
+    p2 = auth_client.patch(f"{base}/{p['id']}", json={"content": "v2", "expected_updated_at": v1_ts}).json()
+    assert p2["content"] == "v2"
+    assert "expected_updated_at" not in p2
+
+    # 오래된 expected_updated_at(v1_ts) 로 수정 시도 → 409 Conflict
+    r = auth_client.patch(f"{base}/{p['id']}", json={"content": "stale edit", "expected_updated_at": v1_ts})
+    assert r.status_code == 409
+
+    # expected_updated_at 없이 강제 덮어쓰기 성공
+    p3 = auth_client.patch(f"{base}/{p['id']}", json={"content": "forced"}).json()
+    assert p3["content"] == "forced"
+
+
+def test_wiki_comments_crud_resolve_and_cascade_delete(app, auth_client, project):
+    base = f"/api/projects/{project['id']}/wiki/pages"
+    p = auth_client.post(base, json={"title": "API 규격", "content": "초안"}).json()
+    cbase = f"{base}/{p['id']}/comments"
+
+    assert auth_client.get(cbase).json() == []
+
+    # 댓글 작성 + 수정 + 해결 토글
+    c = auth_client.post(cbase, json={"body": "응답 코드 409도 문서화할까요?"}).json()
+    assert c["resolved"] is False
+    assert c["resolved_by"] is None
+
+    c_upd = auth_client.patch(f"{cbase}/{c['id']}", json={"body": "409와 422 모두 문서화할까요?"}).json()
+    assert "422" in c_upd["body"]
+
+    c_res = auth_client.patch(f"{cbase}/{c['id']}", json={"resolved": True}).json()
+    assert c_res["resolved"] is True
+    assert c_res["resolved_by"] == "u1"
+
+    c_reopen = auth_client.patch(f"{cbase}/{c['id']}", json={"resolved": False}).json()
+    assert c_reopen["resolved"] is False
+    assert c_reopen["resolved_by"] is None
+
+    # 다른 멤버 권한 체크: 편집 권한 있는 멤버는 해결 가능, 본문 수정/삭제는 불가
+    bob = login(app, "u2:bob@example.com")
+    auth_client.post(f"/api/projects/{project['id']}/members", json={"email": "bob@example.com", "permissions": ["view", "create", "edit"]})
+    assert bob.patch(f"{cbase}/{c['id']}", json={"body": "훔쳐쓰기"}).status_code == 403
+    assert bob.patch(f"{cbase}/{c['id']}", json={"resolved": True}).json()["resolved_by"] == "u2"
+    assert bob.delete(f"{cbase}/{c['id']}").status_code == 403
+
+    # 작성자/관리자는 삭제 가능
+    c2 = bob.post(cbase, json={"body": "확인했습니다 @u1"}).json()
+    assert len(auth_client.get(cbase).json()) == 2
+    assert auth_client.delete(f"{cbase}/{c['id']}").status_code == 204
+    assert len(auth_client.get(cbase).json()) == 1
+
+    # 페이지 삭제 시 남은 위키 댓글도 함께 정리
+    assert auth_client.delete(f"{base}/{p['id']}").status_code == 204
+    assert app.state.db.wiki_comments.get(c2["id"]) is None

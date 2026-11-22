@@ -21,7 +21,7 @@ from app.models.task import ProjectPipeline, Task, TaskLink
 from app.models.template import TaskTemplate
 from app.models.user import User
 from app.models.view import SavedView
-from app.models.wiki import WikiPage, WikiRevision
+from app.models.wiki import WikiComment, WikiPage, WikiRevision
 
 logger = logging.getLogger("mightywork.db")
 
@@ -40,6 +40,7 @@ _COLLECTIONS = (
     ("task_activities", "task_activities.json", TaskActivity),
     ("wiki_pages", "wiki_pages.json", WikiPage),
     ("wiki_revisions", "wiki_revisions.json", WikiRevision),
+    ("wiki_comments", "wiki_comments.json", WikiComment),
     ("attachments", "attachments.json", Attachment),
     ("notifications", "notifications.json", Notification),
     ("audit_logs", "audit_logs.json", AuditLog),
@@ -80,6 +81,7 @@ class Database:
         task_templates: Repository[TaskTemplate] | None = None,
         project_pipelines: Repository[ProjectPipeline] | None = None,
         wiki_revisions: Repository[WikiRevision] | None = None,
+        wiki_comments: Repository[WikiComment] | None = None,
         notifications: Repository[Notification] | None = None,
         audit_logs: Repository[AuditLog] | None = None,
         glossary_terms: Repository[GlossaryTerm] | None = None,
@@ -109,6 +111,7 @@ class Database:
         self.task_activities = task_activities
         self.wiki_pages = wiki_pages
         self.wiki_revisions = wiki_revisions or JsonFileRepository(base / "wiki_revisions.json", WikiRevision)
+        self.wiki_comments = wiki_comments or JsonFileRepository(base / "wiki_comments.json", WikiComment)
         self.attachments = attachments or JsonFileRepository(base / "attachments.json", Attachment)
         self.notifications = notifications or JsonFileRepository(base / "notifications.json", Notification)
         self.audit_logs = audit_logs or JsonFileRepository(base / "audit_logs.json", AuditLog)

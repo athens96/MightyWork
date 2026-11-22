@@ -60,6 +60,7 @@ import type {
   User,
   WebhookDelivery,
   WebhookPreset,
+  WikiComment,
   WikiPage,
   WikiPageCreate,
   WikiPageSummary,
@@ -245,6 +246,14 @@ export const wikiApi = {
     http.get<WikiRevisionDetail>(`/projects/${projectId}/wiki/pages/${id}/revisions/${revId}`),
   restore: (projectId: string, id: string, revId: string) =>
     http.post<WikiPage>(`/projects/${projectId}/wiki/pages/${id}/revisions/${revId}/restore`),
+  listComments: (projectId: string, id: string) =>
+    http.get<WikiComment[]>(`/projects/${projectId}/wiki/pages/${id}/comments`),
+  createComment: (projectId: string, id: string, body: string) =>
+    http.post<WikiComment>(`/projects/${projectId}/wiki/pages/${id}/comments`, { body }),
+  updateComment: (projectId: string, id: string, commentId: string, body: { body?: string; resolved?: boolean }) =>
+    http.patch<WikiComment>(`/projects/${projectId}/wiki/pages/${id}/comments/${commentId}`, body),
+  deleteComment: (projectId: string, id: string, commentId: string) =>
+    http.delete(`/projects/${projectId}/wiki/pages/${id}/comments/${commentId}`),
   links: (projectId: string, id: string) => http.get<PageLinks>(`/projects/${projectId}/wiki/pages/${id}/links`),
   export: (projectId: string, id: string, opts: { format: ExportFormat; children?: boolean; preset?: string; print?: boolean }) => {
     const qs = new URLSearchParams({ format: opts.format });

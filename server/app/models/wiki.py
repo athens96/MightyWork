@@ -73,6 +73,28 @@ class WikiPageUpdate(BaseModel):
     status: PageStatus | None = None
     owner_id: str | None = None
     tags: Tags | None = None
+    expected_updated_at: datetime | None = None  # 낙관적 잠금: 클라이언트가 읽은 시점의 updated_at
+
+
+class WikiComment(Entity):
+    """위키 페이지 토론 댓글 (해결/재오픈 상태 포함)."""
+
+    project_id: str
+    page_id: str
+    author_id: str
+    body: str  # Markdown
+    resolved: bool = False
+    resolved_by: str | None = None
+    via_client: str | None = None
+
+
+class WikiCommentCreate(BaseModel):
+    body: str = Field(min_length=1, max_length=20000)
+
+
+class WikiCommentUpdate(BaseModel):
+    body: str | None = Field(default=None, min_length=1, max_length=20000)
+    resolved: bool | None = None
 
 
 class WikiPageSummary(BaseModel):

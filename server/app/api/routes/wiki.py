@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Query, Response, status
 
-from app.api.deps import CurrentUser, DbDep, ProjectDep, apply_patch, require
+from app.api.deps import AccessDep, CurrentUser, DbDep, ProjectDep, apply_patch, require
 from app.db import Database
 from app.models.common import utcnow
 from app.models.member import Permission
@@ -8,6 +8,9 @@ from app.models.project import Project
 from app.models.wiki import (
     PageStatus,
     PageType,
+    WikiComment,
+    WikiCommentCreate,
+    WikiCommentUpdate,
     WikiPage,
     WikiPageCreate,
     WikiPageSummary,
@@ -17,8 +20,9 @@ from app.models.wiki import (
 )
 from app.services.access import is_member_user
 from app.services.audit import record_audit
+from app.services.events import publish_event
 from app.services.links import propagate_rename
-from app.services.notifications import notify_mentions
+from app.services.notifications import notify_mentions, notify_user
 from app.services.wiki_revisions import line_diff, list_revisions, record_revision
 
 router = APIRouter(prefix="/projects/{project_id}/wiki/pages", tags=["wiki"])
@@ -105,6 +109,12 @@ def get_page(project: ProjectDep, page_id: str, db: DbDep) -> WikiPage:
 @router.patch("/{page_id}", response_model=WikiPage, dependencies=[require(Permission.EDIT)])
 def update_page(project: ProjectDep, page_id: str, body: WikiPageUpdate, user: CurrentUser, db: DbDep) -> WikiPage:
     page = _get_or_404(db, project, page_id)
+    if body.expected_updated_at is not None:
+        if abs(page.updated_at.timestamp() - body.expected_updated_at.timestamp()) > 1e-6:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "다른 사용자가 이미 이 문서를 수정했습니다. 최신 내용을 확인한 뒤 다시 저장하세요.",
+            )
     if "parent_id" in body.model_fields_set:
         _validate_parent(db, project, page_id, body.parent_id)
     if "owner_id" in body.model_fields_set:
@@ -130,6 +140,7 @@ def update_page(project: ProjectDep, page_id: str, body: WikiPageUpdate, user: C
             link=f"/projects/{project.id}/wiki/{updated.id}",
         )
     propagate_rename(db, project, updated, page.title)  # 다른 문서의 [[옛 제목]] → [[새 제목]]
+    publish_event(db, project.id, "wiki.updated", {"page_id": updated.id})
     return updated
 
 
@@ -140,6 +151,8 @@ def delete_page(project: ProjectDep, page_id: str, user: CurrentUser, db: DbDep)
         raise HTTPException(status.HTTP_409_CONFLICT, "Delete or move child pages first")
     for rev in db.wiki_revisions.list(lambda r: r.page_id == page_id):
         db.wiki_revisions.delete(rev.id)
+    for cmt in db.wiki_comments.list(lambda c: c.page_id == page_id):
+        db.wiki_comments.delete(cmt.id)
     db.wiki_pages.delete(page_id)
     record_audit(
         db,
@@ -150,6 +163,94 @@ def delete_page(project: ProjectDep, page_id: str, user: CurrentUser, db: DbDep)
         target_id=page.id,
         summary=f"위키 '{page.title}' 삭제",
     )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# ---------------------------------------------------------------- 위키 댓글 (토론·해결)
+
+
+@router.get("/{page_id}/comments", response_model=list[WikiComment])
+def list_page_comments(project: ProjectDep, page_id: str, db: DbDep) -> list[WikiComment]:
+    _get_or_404(db, project, page_id)
+    return sorted(db.wiki_comments.list(lambda c: c.page_id == page_id), key=lambda c: c.created_at)
+
+
+@router.post("/{page_id}/comments", response_model=WikiComment, status_code=status.HTTP_201_CREATED, dependencies=[require(Permission.CREATE)])
+def create_page_comment(project: ProjectDep, page_id: str, body: WikiCommentCreate, user: CurrentUser, db: DbDep) -> WikiComment:
+    page = _get_or_404(db, project, page_id)
+    comment = db.wiki_comments.create(
+        WikiComment(project_id=project.id, page_id=page.id, author_id=user.id, body=body.body)
+    )
+    link = f"/projects/{project.id}/wiki/{page.id}"
+    mentioned = notify_mentions(
+        db,
+        project=project,
+        actor=user,
+        text=comment.body,
+        title=f"위키 '{page.title}' 댓글에서 나를 언급했습니다",
+        link=link,
+    )
+    already = {n.user_id for n in mentioned}
+    for uid in {page.owner_id, page.created_by}:
+        if uid and uid not in already:
+            notify_user(
+                db,
+                user_id=uid,
+                project_id=project.id,
+                actor_id=user.id,
+                kind="comment",
+                title=f"위키 '{page.title}' 에 새 댓글이 달렸습니다",
+                body=" ".join(comment.body.split())[:140],
+                link=link,
+            )
+    publish_event(db, project.id, "wiki.comment_created", {"page_id": page.id, "comment_id": comment.id})
+    return comment
+
+
+@router.patch("/{page_id}/comments/{comment_id}", response_model=WikiComment)
+def update_page_comment(
+    access: AccessDep,
+    project: ProjectDep,
+    page_id: str,
+    comment_id: str,
+    body: WikiCommentUpdate,
+    user: CurrentUser,
+    db: DbDep,
+) -> WikiComment:
+    _get_or_404(db, project, page_id)
+    comment = db.wiki_comments.get(comment_id)
+    if comment is None or comment.page_id != page_id or comment.project_id != project.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Comment not found")
+    if "body" in body.model_fields_set and comment.author_id != user.id:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Only the author can edit this comment")
+    if "resolved" in body.model_fields_set and comment.author_id != user.id and not access.can(Permission.EDIT):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Edit permission required to resolve comment")
+    extra: dict = {}
+    if "resolved" in body.model_fields_set and body.resolved is not None:
+        extra["resolved_by"] = user.id if body.resolved else None
+    updated = apply_patch(comment, body, **extra)
+    db.wiki_comments.update(updated)
+    publish_event(db, project.id, "wiki.comment_updated", {"page_id": page_id, "comment_id": updated.id})
+    return updated
+
+
+@router.delete("/{page_id}/comments/{comment_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_page_comment(
+    access: AccessDep,
+    project: ProjectDep,
+    page_id: str,
+    comment_id: str,
+    user: CurrentUser,
+    db: DbDep,
+) -> Response:
+    _get_or_404(db, project, page_id)
+    comment = db.wiki_comments.get(comment_id)
+    if comment is None or comment.page_id != page_id or comment.project_id != project.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Comment not found")
+    if comment.author_id != user.id and not access.can(Permission.ADMIN):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Only the author or admin can delete this comment")
+    db.wiki_comments.delete(comment_id)
+    publish_event(db, project.id, "wiki.comment_deleted", {"page_id": page_id, "comment_id": comment_id})
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

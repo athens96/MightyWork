@@ -314,7 +314,22 @@ export interface WikiPageSummary {
 
 export type WikiPageCreate = Pick<WikiPage, "title"> &
   Partial<Pick<WikiPage, "content" | "parent_id" | "page_type" | "status" | "tags" | "aliases">>;
-export type WikiPageUpdate = Partial<Pick<WikiPage, "title" | "content" | "parent_id" | "aliases" | "page_type" | "status" | "owner_id" | "tags">>;
+export type WikiPageUpdate = Partial<
+  Pick<WikiPage, "title" | "content" | "parent_id" | "aliases" | "page_type" | "status" | "owner_id" | "tags">
+> & { expected_updated_at?: string };
+
+export interface WikiComment {
+  id: string;
+  project_id: string;
+  page_id: string;
+  author_id: string;
+  body: string;
+  resolved: boolean;
+  resolved_by: string | null;
+  via_client?: string | null;
+  created_at: string;
+  updated_at: string;
+}
 
 export type PageType = "guide" | "spec" | "decision" | "meeting" | "reference" | "note";
 export type PageStatus = "draft" | "review" | "published" | "deprecated";

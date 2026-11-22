@@ -2,10 +2,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { attachmentsApi, membersApi, tasksApi, wikiApi } from "../../api";
 import { ApiError, saveBlob } from "../../api/http";
-import type { Attachment, LocalGraph, PageLinks, UnlinkedMention, User, WikiPage as WikiPageType, WikiPageSummary } from "../../types";
+import { useAuth } from "../../auth/AuthContext";
+import type { Attachment, LocalGraph, PageLinks, UnlinkedMention, User, WikiComment, WikiPage as WikiPageType, WikiPageSummary } from "../../types";
 import { LocalGraphView } from "./LocalGraphView";
 import { ExportMenu } from "./ExportMenu";
 import { PropertiesBar, PropertiesEditor } from "./pageProps";
+import { WikiComments } from "./WikiComments";
 import { WikiHistoryDrawer } from "./WikiHistoryDrawer";
 import { WikiIndex } from "./WikiIndex";
 import { useCurrentProject } from "../projects/ProjectLayout";
@@ -15,6 +17,7 @@ import { Markdown, TableOfContents } from "../../components/Markdown";
 import { MarkdownToolbar } from "../../components/MarkdownToolbar";
 import { extractHeadings } from "../../lib/markdownHelpers";
 import { can } from "../../lib/permissions";
+import { PROJECT_EVENT, type ProjectEventDetail } from "../../lib/sse";
 import { extractImageFile, insertUploadedImage } from "../../lib/editorUpload";
 import { timeAgo, todayYmd } from "../../lib/time";
 import { useLinkResolver } from "../../lib/useLinkResolver";
@@ -25,10 +28,12 @@ import { WikiTree } from "./WikiTree";
 
 export function WikiPage() {
   const project = useCurrentProject();
+  const { user: me } = useAuth();
   const basePath = `/projects/${project.id}/wiki`;
   const canCreate = can(project, "create");
   const canEdit = can(project, "edit");
   const canDelete = can(project, "delete");
+  const canAdmin = can(project, "admin");
   const { pageId } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
@@ -36,6 +41,8 @@ export function WikiPage() {
   const [page, setPage] = useState<WikiPageType | null>(null);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<Draft>(toDraft(null));
+  const [conflict, setConflict] = useState<WikiPageType | null>(null);
+  const [comments, setComments] = useState<WikiComment[]>([]);
   const [members, setMembers] = useState<User[]>([]);
   const [aliasDraft, setAliasDraft] = useState("");
   const [mentions, setMentions] = useState<UnlinkedMention[]>([]);
@@ -85,6 +92,7 @@ export function WikiPage() {
 
   useEffect(() => {
     setEditing(false);
+    setConflict(null);
     setNavOpen(false);
     setSelectionPop(null);
     setCreatedNotice(null);
@@ -154,6 +162,7 @@ export function WikiPage() {
         wikiApi.unlinkedMentions(project.id, id).then(setMentions, () => setMentions([])),
         wikiApi.graph(project.id, id, graphDepth).then(setGraph, () => setGraph(null)),
         attachmentsApi.list(project.id, { wiki_page_id: id }).then(setAttachments, () => setAttachments([])),
+        wikiApi.listComments(project.id, id).then(setComments, () => setComments([])),
       ]),
     [project.id, graphDepth],
   );
@@ -161,8 +170,23 @@ export function WikiPage() {
     setLinks(null);
     setMentions([]);
     setGraph(null);
+    setComments([]);
     if (pageId) reloadLinks(pageId);
   }, [pageId, reloadLinks]);
+
+  // 실시간 위키 댓글 갱신 (SSE)
+  useEffect(() => {
+    if (!pageId) return;
+    const onEvent = (e: Event) => {
+      const detail = (e as CustomEvent<ProjectEventDetail>).detail;
+      if (!detail || detail.projectId !== project.id || detail.data.page_id !== pageId) return;
+      if (detail.event.startsWith("wiki.comment_")) {
+        wikiApi.listComments(project.id, pageId).then(setComments, () => {});
+      }
+    };
+    window.addEventListener(PROJECT_EVENT, onEvent);
+    return () => window.removeEventListener(PROJECT_EVENT, onEvent);
+  }, [project.id, pageId]);
 
   // 링크 안 된 언급 → [[링크]] 로 바꾸기 (편집 권한)
   const linkMentions = async (sources: UnlinkedMention[]) => {
@@ -192,16 +216,28 @@ export function WikiPage() {
   const startEdit = () => {
     if (!page) return;
     setDraft(toDraft(page));
+    setConflict(null);
     setEditing(true);
   };
 
-  const save = async () => {
+  const save = async (force = false) => {
     if (!page) return;
-    const updated = await wikiApi.update(project.id, page.id, draft);
-    setPage(updated);
-    setEditing(false);
-    reloadTree();
-    reloadLinks(updated.id);
+    setConflict(null);
+    try {
+      const payload = force ? draft : { ...draft, expected_updated_at: page.updated_at };
+      const updated = await wikiApi.update(project.id, page.id, payload);
+      setPage(updated);
+      setEditing(false);
+      reloadTree();
+      reloadLinks(updated.id);
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 409) {
+        const latest = await wikiApi.get(project.id, page.id).catch(() => null);
+        setConflict(latest ?? page);
+        return;
+      }
+      alert(e instanceof ApiError ? String(e.detail) : "저장에 실패했습니다.");
+    }
   };
 
   // MW-8: 위키 체크리스트 항목 또는 드래그 선택한 텍스트로 원클릭 일감 생성 + MW-n 키 자동 삽입
@@ -530,12 +566,57 @@ export function WikiPage() {
                   projectKey={project.key}
                 />
               )}
+              <WikiComments
+                comments={comments}
+                users={members}
+                pages={pages}
+                meId={me?.id}
+                canCreate={canCreate}
+                canEdit={canEdit}
+                canAdmin={canAdmin}
+                links={resolver}
+                onAdd={async (body) => {
+                  const created = await wikiApi.createComment(project.id, page.id, body);
+                  setComments((prev) => [...prev, created]);
+                }}
+                onUpdate={async (id, patch) => {
+                  const updated = await wikiApi.updateComment(project.id, page.id, id, patch);
+                  setComments((prev) => prev.map((c) => (c.id === id ? updated : c)));
+                }}
+                onRemove={async (id) => {
+                  await wikiApi.deleteComment(project.id, page.id, id);
+                  setComments((prev) => prev.filter((c) => c.id !== id));
+                }}
+              />
             </div>
           </>
         )}
 
         {page && editing && canEdit && (
           <div className="editor">
+            {conflict && (
+              <div className="alert tone-err wiki-conflict-bar" role="alert">
+                <div className="wiki-conflict-msg">
+                  <strong>편집 충돌 감지</strong> — 이 문서는 편집을 시작한 뒤 다른 곳에서 수정되었습니다 ({timeAgo(conflict.updated_at)}).
+                </div>
+                <div className="wiki-conflict-actions">
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    onClick={() => {
+                      setPage(conflict);
+                      setDraft(toDraft(conflict));
+                      setConflict(null);
+                    }}
+                  >
+                    최신 내용 불러오기
+                  </button>
+                  <button type="button" className="btn btn-sm btn-primary" onClick={() => save(true)}>
+                    내 내용으로 덮어쓰기
+                  </button>
+                </div>
+              </div>
+            )}
             <input
               className="title-input"
               value={draft.title}
@@ -657,10 +738,10 @@ export function WikiPage() {
                   />
                 </>
               )}
-              <button className="btn btn-ghost" onClick={() => setEditing(false)}>
+              <button className="btn btn-ghost" onClick={() => { setConflict(null); setEditing(false); }}>
                 취소
               </button>
-              <button className="btn btn-primary" onClick={save}>
+              <button className="btn btn-primary" onClick={() => save()}>
                 저장
               </button>
             </div>
