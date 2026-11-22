@@ -6,6 +6,8 @@
 # server
 server/.venv/
 server/data/
+server-rs/target/
+server-rs/data/
 __pycache__/
 .pytest_cache/
 
