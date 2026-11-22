@@ -1,7 +1,7 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from app.models.task import Task
-from app.services.migrations import extract_version_from_tag, migrate_version_tags
+from app.services.migrations import extract_cycle_from_tag, extract_version_from_tag, migrate_cycle_tags, migrate_version_tags
 
 
 def test_extract_version_from_tag():
@@ -122,3 +122,44 @@ def test_migrate_version_tags_idempotent_and_preserves_updated_at(app, auth_clie
 
     # 2회차 실행은 멱등(0건)
     assert migrate_version_tags(db) == 0
+
+
+def test_migrate_cycle_tags_creates_cycles_idempotently(app, auth_client, project):
+    db = app.state.db
+    user_id = auth_client.get("/api/auth/me").json()["id"]
+    pid = project["id"]
+    old_ts = datetime(2026, 10, 15, 9, 0, 0, tzinfo=timezone.utc)
+
+    assert extract_cycle_from_tag("cycle:2026-11") == "2026-11"
+    assert extract_cycle_from_tag("CYCLE:2026-12") == "2026-12"
+    assert extract_cycle_from_tag("sprint:Alpha") == "Alpha"
+    assert extract_cycle_from_tag("cycles") is None
+
+    t1 = db.tasks.create(
+        Task(project_id=pid, number=1, title="11월 작업 1", tags=["cycle:2026-11", "mcp"], created_by=user_id, created_at=old_ts, updated_at=old_ts)
+    )
+    t2 = db.tasks.create(
+        Task(project_id=pid, number=2, title="11월 작업 2", tags=["cycle:2026-11", "git"], created_by=user_id, created_at=old_ts, updated_at=old_ts)
+    )
+    t3 = db.tasks.create(
+        Task(project_id=pid, number=3, title="12월 작업", tags=["cycle:2026-12", "cli"], created_by=user_id, created_at=old_ts, updated_at=old_ts)
+    )
+
+    created_cycles, updated_tasks = migrate_cycle_tags(db, today=date(2026, 11, 22))
+    assert (created_cycles, updated_tasks) == (2, 3)
+
+    cycles = {c.name: c for c in db.cycles.list(lambda c: c.project_id == pid)}
+    assert set(cycles.keys()) == {"2026-11", "2026-12"}
+    assert cycles["2026-11"].status == "active"
+    assert cycles["2026-11"].start_date == date(2026, 11, 1)
+    assert cycles["2026-11"].end_date == date(2026, 11, 30)
+    assert cycles["2026-12"].status == "upcoming"
+    assert cycles["2026-12"].end_date == date(2026, 12, 31)
+
+    m1, m2, m3 = db.tasks.get(t1.id), db.tasks.get(t2.id), db.tasks.get(t3.id)
+    assert m1 is not None and m1.cycle_id == cycles["2026-11"].id and m1.tags == ["mcp"] and m1.updated_at == old_ts
+    assert m2 is not None and m2.cycle_id == cycles["2026-11"].id and m2.tags == ["git"]
+    assert m3 is not None and m3.cycle_id == cycles["2026-12"].id and m3.tags == ["cli"]
+
+    # 재실행 멱등 확인
+    assert migrate_cycle_tags(db, today=date(2026, 11, 22)) == (0, 0)

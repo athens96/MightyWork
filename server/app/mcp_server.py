@@ -23,7 +23,9 @@ from app.core.version import APP_VERSION
 from app.db import Database
 from app.models.comment import Comment
 from app.models.common import utcnow
+from app.models.cycle import Cycle, CycleStatus
 from app.models.member import Permission
+from app.models.milestone import Milestone, MilestoneStatus
 from app.models.oauth import SCOPE_READ, SCOPE_WRITE
 from app.models.project import Project
 from app.models.task import PIPELINE_LABELS, PipelineStage, Priority, Task, TaskLink, TaskLinkKind
@@ -35,6 +37,7 @@ from app.services.knowledge_qa import answer_question
 from app.services.links import norm_title, pages_by_title, project_pages, propagate_rename
 from app.services.oauth import server as oauth
 from app.services.projects import allocate_task_number
+from app.services.releases import build_changelog, build_releases
 from app.services.search import search as search_project
 from app.services.tasks import record_changes, record_created
 from app.services.wiki_revisions import record_revision
@@ -46,6 +49,7 @@ UPDATE = ToolAnnotations(read_only_hint=False, destructive_hint=True, idempotent
 INSTRUCTIONS = """MightyWork 는 프로젝트별 일감(파이프라인 보드)과 위키(Markdown)를 관리하는 협업 도구입니다.
 - 먼저 list_projects 로 접근 가능한 프로젝트와 키(예: MW)를 확인하세요. project 인자에는 키나 id 를 씁니다.
 - 일감은 'MW-12' 같은 키로 가리킵니다. 단계: backlog → todo → in_progress → review → qa → done.
+- 버전(version)·사이클(cycle)·마일스톤(milestone)은 태그가 아닌 전용 필드와 도구(list_cycles, list_milestones, list_releases)를 사용하세요.
 - 위키 본문의 [[페이지 제목]] 은 다른 위키 페이지 링크, MW-12 는 일감 링크입니다.
 - 쓰기 도구는 토큰에 쓰기 권한(mightywork:write)이 있고 프로젝트 권한(생성/편집)이 있을 때만 동작합니다."""
 
@@ -147,14 +151,42 @@ def build_mcp(settings: Settings, db: Database) -> MCPServer:
             raise ToolError(f"'{email}' 은 이 프로젝트의 (로그인한) 멤버가 아닙니다")
         return found[0].id
 
+    def find_cycle(p: Project, ref: str) -> Cycle:
+        key = ref.strip()
+        by_id = db.cycles.get(key)
+        if by_id is not None and by_id.project_id == p.id:
+            return by_id
+        found = db.cycles.list(lambda c: c.project_id == p.id and c.name.casefold() == key.casefold())
+        if not found:
+            raise ToolError(f"사이클 '{ref}' 를 찾을 수 없습니다 (이름 또는 id)")
+        return found[0]
+
+    def find_milestone(p: Project, ref: str) -> Milestone:
+        key = ref.strip()
+        by_id = db.milestones.get(key)
+        if by_id is not None and by_id.project_id == p.id:
+            return by_id
+        found = db.milestones.list(lambda m: m.project_id == p.id and m.name.casefold() == key.casefold())
+        if not found:
+            raise ToolError(f"마일스톤 '{ref}' 를 찾을 수 없습니다 (이름 또는 id)")
+        return found[0]
+
     def email_of(user_id: str | None) -> str | None:
         u = db.users.get(user_id) if user_id else None
         return u.email if u else None
 
+    def cycle_name_of(cycle_id: str | None) -> str | None:
+        c = db.cycles.get(cycle_id) if cycle_id else None
+        return c.name if c else None
+
+    def milestone_name_of(milestone_id: str | None) -> str | None:
+        m = db.milestones.get(milestone_id) if milestone_id else None
+        return m.name if m else None
+
     def task_summary(p: Project, t: Task) -> dict[str, Any]:
         return {
             "key": f"{p.key}-{t.number}", "title": t.title, "stage": t.stage.value, "priority": t.priority.value,
-            "version": t.version,
+            "version": t.version, "cycle": cycle_name_of(t.cycle_id), "milestone": milestone_name_of(t.milestone_id),
             "assignee": email_of(t.assignee_id), "due_date": t.due_date.isoformat() if t.due_date else None, "tags": t.tags,
             "checklist": f"{sum(i.done for i in t.checklist)}/{len(t.checklist)}" if t.checklist else None,
         }
@@ -216,26 +248,110 @@ def build_mcp(settings: Settings, db: Database) -> MCPServer:
         project: str,
         stage: PipelineStage | None = None,
         version: str | None = None,
+        cycle: str | None = None,
+        milestone: str | None = None,
         assignee_email: str | None = None,
         mine: bool = False,
         limit: int = 50,
     ) -> dict[str, Any]:
-        """일감 목록. stage(backlog/todo/in_progress/review/qa/done)·버전(version)·작업자 이메일·내 일감(mine)으로 거릅니다."""
+        """일감 목록. stage·버전(version)·사이클(cycle 이름/id)·마일스톤(milestone 이름/id)·작업자 이메일·내 일감(mine)으로 거릅니다."""
         user = me()
         a = project_access(user, project)
         assignee = user.id if mine else (user_by_email(a.project, assignee_email) if assignee_email else None)
         ver_cf = version.strip().casefold() if version else None
+        cycle_id = find_cycle(a.project, cycle).id if cycle else None
+        milestone_id = find_milestone(a.project, milestone).id if milestone else None
         tasks = sorted(
             db.tasks.list(
                 lambda t: t.project_id == a.project.id
                 and (stage is None or t.stage == stage)
                 and (ver_cf is None or (t.version or "").casefold() == ver_cf)
+                and (cycle_id is None or t.cycle_id == cycle_id)
+                and (milestone_id is None or t.milestone_id == milestone_id)
                 and (assignee is None or t.assignee_id == assignee)
             ),
             key=lambda t: t.number,
         )
         return {"pipeline": {s.value: PIPELINE_LABELS[s] for s in PipelineStage}, "total": len(tasks),
                 "tasks": [task_summary(a.project, t) for t in tasks[: max(1, min(limit, 200))]]}
+
+    @mcp.tool(annotations=READ)
+    def list_cycles(project: str, status: CycleStatus | None = None) -> list[dict[str, Any]]:
+        """프로젝트의 사이클(스프린트) 목록과 진행률·포인트 집계 조회."""
+        a = project_access(me(), project)
+        all_tasks = db.tasks.list(lambda t: t.project_id == a.project.id and t.triage_status is None)
+        order = {"active": 0, "upcoming": 1, "completed": 2}
+        cycles = [c for c in db.cycles.list(lambda c: c.project_id == a.project.id) if status is None or c.status == status]
+        cycles.sort(key=lambda c: (order[c.status], c.start_date))
+        out: list[dict[str, Any]] = []
+        for c in cycles:
+            items = [t for t in all_tasks if t.cycle_id == c.id]
+            done = [t for t in items if t.stage == PipelineStage.DONE]
+            tot_pts = sum(t.estimate or 0 for t in items)
+            done_pts = sum(t.estimate or 0 for t in done)
+            pct = round((done_pts / tot_pts) * 100) if tot_pts > 0 else (round((len(done) / len(items)) * 100) if items else 0)
+            out.append({
+                "id": c.id, "name": c.name, "status": c.status,
+                "start_date": c.start_date.isoformat(), "end_date": c.end_date.isoformat(),
+                "goal": c.goal, "target_points": c.target_points,
+                "total_tasks": len(items), "done_tasks": len(done),
+                "total_points": tot_pts, "done_points": done_pts, "completion_pct": pct,
+            })
+        return out
+
+    @mcp.tool(annotations=READ)
+    def list_milestones(project: str, status: MilestoneStatus | None = None) -> list[dict[str, Any]]:
+        """프로젝트의 마일스톤(에픽/릴리즈) 목록과 진척률 조회."""
+        a = project_access(me(), project)
+        all_tasks = db.tasks.list(lambda t: t.project_id == a.project.id and t.triage_status is None)
+        order = {"active": 0, "planned": 1, "completed": 2}
+        items = [m for m in db.milestones.list(lambda m: m.project_id == a.project.id) if status is None or m.status == status]
+        items.sort(key=lambda m: (order[m.status], m.target_date is None, m.target_date or date.max, m.created_at))
+        out: list[dict[str, Any]] = []
+        for m in items:
+            linked = [t for t in all_tasks if t.milestone_id == m.id]
+            done = sum(1 for t in linked if t.stage == PipelineStage.DONE)
+            pct = round((done / len(linked)) * 100) if linked else 0
+            out.append({
+                "id": m.id, "name": m.name, "status": m.status, "description": m.description,
+                "start_date": m.start_date.isoformat() if m.start_date else None,
+                "target_date": m.target_date.isoformat() if m.target_date else None,
+                "total_tasks": len(linked), "done_tasks": done, "progress_pct": pct,
+            })
+        return out
+
+    @mcp.tool(annotations=READ)
+    def list_releases(
+        project: str,
+        version: str | None = None,
+        include_changelog: bool = False,
+        include_unfinished: bool = False,
+    ) -> dict[str, Any]:
+        """프로젝트의 버전(task.version)별 릴리즈 진행 현황 조회. version 과 include_changelog=true 지정 시 Markdown 체인지로그도 반환."""
+        a = project_access(me(), project)
+        all_tasks = db.tasks.list(lambda t: t.project_id == a.project.id)
+        summary = build_releases(a.project, all_tasks)
+        releases = summary.releases
+        if version:
+            ver_cf = version.strip().casefold()
+            releases = [r for r in releases if r.version.casefold() == ver_cf]
+        result: dict[str, Any] = {
+            "unversioned_count": summary.unversioned_count,
+            "releases": [
+                {
+                    "version": r.version, "status": r.status, "progress_pct": r.progress_pct,
+                    "total_tasks": r.total_tasks, "done_tasks": r.done_tasks,
+                    "in_progress_tasks": r.in_progress_tasks, "todo_tasks": r.todo_tasks,
+                    "total_points": r.total_points, "done_points": r.done_points,
+                    "tasks": [{"key": t.key, "title": t.title, "stage": t.stage.value, "priority": t.priority.value} for t in r.tasks],
+                }
+                for r in releases
+            ],
+        }
+        if include_changelog and version:
+            cl = build_changelog(a.project, all_tasks, version, include_unfinished=include_unfinished)
+            result["changelog"] = cl.markdown if cl else None
+        return result
 
     @mcp.tool(annotations=READ)
     def get_task(project: str, task: str) -> dict[str, Any]:
@@ -290,6 +406,58 @@ def build_mcp(settings: Settings, db: Database) -> MCPServer:
     # ------------------------------------------------------------ 쓰기 도구
 
     @mcp.tool(annotations=CREATE)
+    def create_cycle(
+        project: str,
+        name: str,
+        start_date: date,
+        end_date: date,
+        goal: str = "",
+        target_points: int | None = None,
+        status: CycleStatus = "upcoming",
+    ) -> dict[str, Any]:
+        """새 사이클(스프린트) 만들기. status 는 upcoming / active / completed."""
+        user = me(write=True)
+        a = project_access(user, project, Permission.CREATE)
+        try:
+            c = Cycle(
+                project_id=a.project.id, name=name.strip(), goal=goal.strip(),
+                start_date=start_date, end_date=end_date, target_points=target_points,
+                status=status, created_by=user.id,
+            )
+        except ValidationError as e:
+            raise ToolError(f"값이 올바르지 않습니다: {e.errors(include_url=False)[0]['msg']}") from e
+        db.cycles.create(c)
+        publish_event(db, a.project.id, "cycle.updated", {"cycle_id": c.id})
+        return {"id": c.id, "name": c.name, "status": c.status, "start_date": c.start_date.isoformat(), "end_date": c.end_date.isoformat(), "goal": c.goal}
+
+    @mcp.tool(annotations=CREATE)
+    def create_milestone(
+        project: str,
+        name: str,
+        description: str = "",
+        start_date: date | None = None,
+        target_date: date | None = None,
+        status: MilestoneStatus = "planned",
+    ) -> dict[str, Any]:
+        """새 마일스톤(릴리즈/에픽) 만들기. status 는 planned / active / completed."""
+        user = me(write=True)
+        a = project_access(user, project, Permission.CREATE)
+        try:
+            m = Milestone(
+                project_id=a.project.id, name=name.strip(), description=description.strip(),
+                start_date=start_date, target_date=target_date, status=status, created_by=user.id,
+            )
+        except ValidationError as e:
+            raise ToolError(f"값이 올바르지 않습니다: {e.errors(include_url=False)[0]['msg']}") from e
+        db.milestones.create(m)
+        publish_event(db, a.project.id, "milestone.updated", {"milestone_id": m.id})
+        return {
+            "id": m.id, "name": m.name, "status": m.status, "description": m.description,
+            "start_date": m.start_date.isoformat() if m.start_date else None,
+            "target_date": m.target_date.isoformat() if m.target_date else None,
+        }
+
+    @mcp.tool(annotations=CREATE)
     def create_task(
         project: str,
         title: str,
@@ -297,6 +465,8 @@ def build_mcp(settings: Settings, db: Database) -> MCPServer:
         stage: PipelineStage = PipelineStage.BACKLOG,
         priority: Priority = Priority.MEDIUM,
         version: str | None = None,
+        cycle: str | None = None,
+        milestone: str | None = None,
         parent: str | None = None,
         assignee_email: str | None = None,
         start_date: date | None = None,
@@ -304,11 +474,13 @@ def build_mcp(settings: Settings, db: Database) -> MCPServer:
         tags: list[str] | None = None,
         checklist: list[str] | None = None,
     ) -> dict[str, Any]:
-        """일감 만들기. 설명은 Markdown, version 은 목표 버전('v0.6.0'), parent 는 상위 일감 키('MW-1'), checklist 는 할 일 항목 문자열 목록."""
+        """일감 만들기. version('v0.6.0')·cycle(이름/id)·milestone(이름/id)·parent('MW-1')·checklist 지원."""
         user = me(write=True)
         a = project_access(user, project, Permission.CREATE)
         parent_id = find_task(a.project, parent).id if parent else None
-        data = dict(title=title, description=description, stage=stage, priority=priority, version=version, parent_id=parent_id, assignee_id=user_by_email(a.project, assignee_email),
+        cycle_id = find_cycle(a.project, cycle).id if cycle else None
+        milestone_id = find_milestone(a.project, milestone).id if milestone else None
+        data = dict(title=title, description=description, stage=stage, priority=priority, version=version, cycle_id=cycle_id, milestone_id=milestone_id, parent_id=parent_id, assignee_id=user_by_email(a.project, assignee_email),
                     start_date=start_date, due_date=due_date, tags=tags or [], checklist=[{"text": c} for c in checklist or []])
         try:
             Task.model_validate(data | {"project_id": a.project.id, "number": 0, "created_by": user.id})
@@ -346,6 +518,10 @@ def build_mcp(settings: Settings, db: Database) -> MCPServer:
         priority: Priority | None = None,
         version: str | None = None,
         clear_version: bool = False,
+        cycle: str | None = None,
+        clear_cycle: bool = False,
+        milestone: str | None = None,
+        clear_milestone: bool = False,
         assignee_email: str | None = None,
         unassign: bool = False,
         start_date: date | None = None,
@@ -353,7 +529,7 @@ def build_mcp(settings: Settings, db: Database) -> MCPServer:
         tags: list[str] | None = None,
         check_items: list[str] | None = None,
     ) -> dict[str, Any]:
-        """일감 수정 (보낸 값만 바뀜). 단계 이동은 stage, 버전 지정은 version(해제는 clear_version=true), 작업자 해제는 unassign=true, check_items 는 완료 처리할 할 일 문구."""
+        """일감 수정 (보낸 값만 바뀜). stage·version·cycle·milestone(이름/id, 해제는 clear_*=true)·작업자(unassign=true)·check_items 지원."""
         user = me(write=True)
         a = project_access(user, project, Permission.EDIT)
         before = find_task(a.project, task)
@@ -363,6 +539,14 @@ def build_mcp(settings: Settings, db: Database) -> MCPServer:
             changes["version"] = None
         elif version is not None:
             changes["version"] = version.strip() or None
+        if clear_cycle:
+            changes["cycle_id"] = None
+        elif cycle is not None:
+            changes["cycle_id"] = find_cycle(a.project, cycle).id
+        if clear_milestone:
+            changes["milestone_id"] = None
+        elif milestone is not None:
+            changes["milestone_id"] = find_milestone(a.project, milestone).id
         if unassign:
             changes["assignee_id"] = None
         elif assignee_email:

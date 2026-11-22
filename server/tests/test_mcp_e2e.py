@@ -147,13 +147,30 @@ async def test_oauth_flow_and_tools(server):
         hits = (await call(client, "search", {"project": "MW", "query": "MCP"})).structured_content["result"]
         assert {h["kind"] for h in hits} == {"task", "wiki"}
 
-        # 신규 도구: 하위 일감 + 일감 링크 + 용어집/그래프 Q&A
+        # 신규 도구: 하위 일감 + 일감 링크 + 용어집/그래프 Q&A + 사이클·마일스톤·릴리즈(MW-20)
         sub = (await call(client, "create_task", {"project": "MW", "title": "하위 작업", "parent": "MW-1"})).structured_content
         assert sub["key"] == "MW-2"
         linked = (await call(client, "link_tasks", {"project": "MW", "source_task": "MW-1", "target_task": "MW-2", "kind": "blocks"})).structured_content
         assert linked["kind"] == "blocks"
         qa = (await call(client, "ask_knowledge_graph", {"project": "MW", "question": "MCP 가이드가 무엇인가요?"})).structured_content
         assert "MCP 가이드" in qa["answer"]
+
+        cyc = (await call(client, "create_cycle", {"project": "MW", "name": "2026-11", "start_date": "2026-11-01", "end_date": "2026-11-30", "status": "active"})).structured_content
+        ms = (await call(client, "create_milestone", {"project": "MW", "name": "v0.2 출시", "status": "active"})).structured_content
+        assert cyc["name"] == "2026-11" and ms["name"] == "v0.2 출시"
+
+        updated_meta = (await call(client, "update_task", {"project": "MW", "task": "MW-1", "version": "v0.2.0", "cycle": "2026-11", "milestone": "v0.2 출시", "stage": "done"})).structured_content
+        assert updated_meta["version"] == "v0.2.0" and updated_meta["cycle"] == "2026-11" and updated_meta["milestone"] == "v0.2 출시"
+
+        by_cycle = (await call(client, "list_tasks", {"project": "MW", "cycle": "2026-11", "version": "v0.2.0"})).structured_content
+        assert by_cycle["total"] == 1 and by_cycle["tasks"][0]["key"] == "MW-1"
+
+        cycs = (await call(client, "list_cycles", {"project": "MW"})).structured_content["result"]
+        assert cycs[0]["name"] == "2026-11" and cycs[0]["done_tasks"] == 1
+        mss = (await call(client, "list_milestones", {"project": "MW"})).structured_content["result"]
+        assert mss[0]["name"] == "v0.2 출시" and mss[0]["progress_pct"] == 100
+        rels = (await call(client, "list_releases", {"project": "MW", "version": "v0.2.0", "include_changelog": True})).structured_content
+        assert rels["releases"][0]["version"] == "v0.2.0" and "MW-1" in rels["changelog"]
 
         missing = await call(client, "get_task", {"project": "NOPE", "task": "1"})
         assert missing.is_error and "접근 권한" in text(missing)
