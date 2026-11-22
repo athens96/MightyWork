@@ -194,3 +194,16 @@ export const MenuIcon = (p: P) => (
     <path d="M4 6h16M4 12h16M4 18h16" />
   </Icon>
 );
+
+export const StarIcon = ({ filled, ...p }: P & { filled?: boolean }) => (
+  <Icon {...p} fill={filled ? "currentColor" : "none"}>
+    <path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2L12 17.3 6.4 20.2l1.1-6.2L3 9.6l6.2-.9z" />
+  </Icon>
+);
+
+export const ClockIcon = (p: P) => (
+  <Icon {...p}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M12 7v5l3 2" />
+  </Icon>
+);

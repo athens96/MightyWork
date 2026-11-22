@@ -3,13 +3,14 @@ import { Link, NavLink, Outlet, useLocation, useMatch } from "react-router-dom";
 import { notificationsApi } from "../api";
 import { useAuth } from "../auth/AuthContext";
 import { useProjects } from "../features/projects/ProjectsContext";
+import { removePin, useNavBookmarks } from "../lib/recentsAndPins";
 import { subscribeSSE } from "../lib/sse";
 import { APP_VERSION } from "../lib/version";
 import { OPEN_VERSION_MODAL_EVENT, VERSION_AVAILABLE_EVENT } from "../lib/versionCheck";
 import { useTheme } from "../theme";
 import { CommandPalette } from "./CommandPalette";
 import { QuickCreateModal, ShortcutsModal } from "./QuickCreateModal";
-import { BellIcon, BoardIcon, CalendarIcon, CheckSquareIcon, CloseIcon, DocIcon, FolderIcon, GraphIcon, GridIcon, LogoutIcon, MenuIcon, MoonIcon, PlugIcon, PlusIcon, SearchIcon, SunIcon } from "./icons";
+import { BellIcon, BoardIcon, CalendarIcon, CheckSquareIcon, ChevronIcon, ClockIcon, CloseIcon, DocIcon, FolderIcon, GraphIcon, GridIcon, LogoutIcon, MenuIcon, MoonIcon, PlugIcon, PlusIcon, SearchIcon, StarIcon, SunIcon } from "./icons";
 
 export const OPEN_COMMAND_EVENT = "mightywork:open-command";
 
@@ -25,6 +26,8 @@ export function Layout() {
   const [keysOpen, setKeysOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [newVersion, setNewVersion] = useState<string | null>(null);
+  const [recentsOpen, setRecentsOpen] = useState(false);
+  const { pins, recents } = useNavBookmarks();
   const location = useLocation();
   const activeProjectId = useMatch("/projects/:projectId/*")?.params.projectId;
   const activeProject = projects.find((p) => p.id === activeProjectId);
@@ -98,6 +101,9 @@ export function Layout() {
 
   const q = query.trim().toLowerCase();
   const visible = q ? projects.filter((p) => `${p.key} ${p.name}`.toLowerCase().includes(q)) : projects;
+  const projectIds = new Set(projects.map((p) => p.id));
+  const visiblePins = pins.filter((b) => projectIds.has(b.projectId));
+  const visibleRecents = recents.filter((b) => projectIds.has(b.projectId)).slice(0, 6);
 
   return (
     <div className="app">
@@ -197,6 +203,52 @@ export function Layout() {
           <Link to="/projects#new" className="side-add">
             <PlusIcon size={10} /> 프로젝트 추가
           </Link>
+
+          {visiblePins.length > 0 && (
+            <div className="side-bookmark-section">
+              <div className="side-section side-bookmark-head">
+                <StarIcon size={11} filled /> 즐겨찾기 <span className="mono">{visiblePins.length}</span>
+              </div>
+              {visiblePins.map((b) => (
+                <div key={`${b.kind}:${b.id}`} className="side-bookmark-row">
+                  <NavLink to={b.path} className="side-sub side-bookmark-link" title={`${b.label} · ${b.title}`}>
+                    {b.kind === "task" ? <BoardIcon size={12} /> : <DocIcon size={12} />}
+                    <span className="name">{b.kind === "task" ? `${b.label} ${b.title}` : b.title}</span>
+                  </NavLink>
+                  <button
+                    type="button"
+                    className="side-bookmark-unpin"
+                    title="즐겨찾기 해제"
+                    aria-label={`${b.title} 즐겨찾기 해제`}
+                    onClick={() => removePin(b.kind, b.id)}
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {visibleRecents.length > 0 && (
+            <div className="side-bookmark-section">
+              <button
+                type="button"
+                className="side-section side-bookmark-head is-toggle"
+                aria-expanded={recentsOpen}
+                onClick={() => setRecentsOpen((o) => !o)}
+              >
+                <ClockIcon size={11} /> 최근 본 항목 <span className="mono">{visibleRecents.length}</span>
+                <ChevronIcon size={10} className={recentsOpen ? "is-open" : ""} />
+              </button>
+              {recentsOpen &&
+                visibleRecents.map((b) => (
+                  <NavLink key={`${b.kind}:${b.id}`} to={b.path} className="side-sub side-bookmark-link" title={`${b.label} · ${b.title}`}>
+                    {b.kind === "task" ? <BoardIcon size={12} /> : <DocIcon size={12} />}
+                    <span className="name">{b.kind === "task" ? `${b.label} ${b.title}` : b.title}</span>
+                  </NavLink>
+                ))}
+            </div>
+          )}
         </nav>
 
         <div className="side-footer">

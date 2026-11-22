@@ -4,10 +4,11 @@ import { attachmentsApi, commentsApi, githubApi, tasksApi, wikiApi } from "../..
 import { ApiError, saveBlob } from "../../api/http";
 import { useAuth } from "../../auth/AuthContext";
 import { EditorSuggestBar, useEditorSuggest } from "../../components/EditorSuggest";
-import { CloseIcon, DocIcon, EditIcon, LinkIcon, PaperclipIcon } from "../../components/icons";
+import { CloseIcon, DocIcon, EditIcon, LinkIcon, PaperclipIcon, StarIcon } from "../../components/icons";
 import { RefreshButton } from "../../components/RefreshButton";
 import { makeBranchName } from "../../lib/branchName";
 import { extractImageFile, insertUploadedImage } from "../../lib/editorUpload";
+import { recordRecent, removeBookmark, togglePin, useNavBookmarks } from "../../lib/recentsAndPins";
 import { PROJECT_EVENT, type ProjectEventDetail } from "../../lib/sse";
 import { sortVersionLabels } from "../../lib/taskGrouping";
 import { useAutoRefresh } from "../../lib/useAutoRefresh";
@@ -51,6 +52,21 @@ export function TaskDetailPanel() {
   const attInput = useRef<HTMLInputElement>(null);
   const resolver = useLinkResolver(project, { tasks, pages });
   const descSuggest = useEditorSuggest(desc ?? "", descCursor, pages, members);
+  const { pins } = useNavBookmarks();
+  const isTaskPinned = Boolean(task && pins.some((p) => p.kind === "task" && p.id === task.id));
+
+  useEffect(() => {
+    if (!task) return;
+    recordRecent({
+      kind: "task",
+      id: task.id,
+      projectId: project.id,
+      projectKey: project.key,
+      label: `${project.key}-${task.number}`,
+      title: task.title,
+      path: `/projects/${project.id}/tasks/${task.id}`,
+    });
+  }, [task?.id, task?.title, task?.number, project.id, project.key]);
 
   const close = useCallback(() => navigate(`/projects/${project.id}/tasks`), [navigate, project.id]);
   const refreshActivity = useCallback(() => tasksApi.activity(project.id, taskId).then(setActivity), [project.id, taskId]);
@@ -192,6 +208,7 @@ export function TaskDetailPanel() {
   const remove = async () => {
     if (!task || !confirm(`"${task.title}" 일감을 삭제할까요?\n덧글과 이력도 함께 삭제됩니다.`)) return;
     await tasksApi.remove(project.id, task.id);
+    removeBookmark("task", task.id);
     onDeleted(task.id);
     close();
   };
@@ -267,6 +284,27 @@ export function TaskDetailPanel() {
               }}
             >
               {branchCopied ? "브랜치 복사됨" : "브랜치 복사"}
+            </button>
+          )}
+          {task && (
+            <button
+              type="button"
+              className={`icon-btn star-btn ${isTaskPinned ? "is-pinned" : ""}`}
+              title={isTaskPinned ? "즐겨찾기 해제" : "즐겨찾기에 고정"}
+              aria-pressed={isTaskPinned}
+              onClick={() =>
+                togglePin({
+                  kind: "task",
+                  id: task.id,
+                  projectId: project.id,
+                  projectKey: project.key,
+                  label: taskKey,
+                  title: task.title,
+                  path: `/projects/${project.id}/tasks/${task.id}`,
+                })
+              }
+            >
+              <StarIcon size={13} filled={isTaskPinned} />
             </button>
           )}
           <button

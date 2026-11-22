@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { searchApi } from "../api";
-import { BoardIcon, DocIcon, FolderIcon, PlusIcon, SearchIcon } from "./icons";
+import { useNavBookmarks } from "../lib/recentsAndPins";
+import { BoardIcon, ClockIcon, DocIcon, FolderIcon, PlusIcon, SearchIcon, StarIcon } from "./icons";
 import type { Project, SearchHit } from "../types";
 
 interface CmdItem {
@@ -9,7 +10,7 @@ interface CmdItem {
   group: string;
   label: string;
   hint?: string;
-  icon?: "task" | "wiki" | "project" | "action";
+  icon?: "task" | "wiki" | "project" | "action" | "pin" | "recent";
   run: () => void;
 }
 
@@ -30,6 +31,7 @@ export function CommandPalette({ open, onClose, projects, activeProjectId, onQui
   const [hits, setHits] = useState<SearchHit[]>([]);
   const [index, setIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const { pins, recents } = useNavBookmarks();
 
   const activeProject = projects.find((p) => p.id === activeProjectId);
 
@@ -136,9 +138,40 @@ export function CommandPalette({ open, onClose, projects, activeProjectId, onQui
       ),
     }));
 
+    const projectIds = new Set(projects.map((p) => p.id));
+    const pinKeys = new Set<string>();
+    const pinItems: CmdItem[] = pins
+      .filter((b) => projectIds.has(b.projectId))
+      .map((b) => {
+        pinKeys.add(`${b.kind}:${b.id}`);
+        return {
+          id: `pin-${b.kind}-${b.id}`,
+          group: "즐겨찾기",
+          label: b.kind === "task" ? `${b.label} ${b.title}` : `${b.title} (${b.projectKey})`,
+          hint: "즐겨찾기",
+          icon: "pin",
+          run: go(b.path),
+        };
+      });
+
+    const recentItems: CmdItem[] = recents
+      .filter((b) => projectIds.has(b.projectId) && !pinKeys.has(`${b.kind}:${b.id}`))
+      .slice(0, 5)
+      .map((b) => ({
+        id: `rec-${b.kind}-${b.id}`,
+        group: "최근 본 항목",
+        label: b.kind === "task" ? `${b.label} ${b.title}` : `${b.title} (${b.projectKey})`,
+        hint: "최근",
+        icon: "recent",
+        run: go(b.path),
+      }));
+
+    const matchedBookmarks = [...pinItems, ...recentItems].filter(
+      (it) => !q || it.label.toLowerCase().includes(q) || (it.hint ?? "").toLowerCase().includes(q),
+    );
     const matchedStatic = [...actions, ...projItems].filter((it) => !q || it.label.toLowerCase().includes(q) || (it.hint ?? "").toLowerCase().includes(q));
-    return [...searchItems, ...matchedStatic].slice(0, 14);
-  }, [query, hits, projects, activeProject, activeProjectId, navigate, onClose, onQuickCreate, onToggleTheme, onShowShortcuts]);
+    return [...searchItems, ...matchedBookmarks, ...matchedStatic].slice(0, 14);
+  }, [query, hits, pins, recents, projects, activeProject, activeProjectId, navigate, onClose, onQuickCreate, onToggleTheme, onShowShortcuts]);
 
   useEffect(() => {
     setIndex(0);
@@ -187,7 +220,19 @@ export function CommandPalette({ open, onClose, projects, activeProjectId, onQui
                 onClick={it.run}
               >
                 <span className="cmd-icon">
-                  {it.icon === "task" ? <BoardIcon size={13} /> : it.icon === "wiki" ? <DocIcon size={13} /> : it.icon === "project" ? <FolderIcon size={13} /> : <PlusIcon size={12} />}
+                  {it.icon === "pin" ? (
+                    <StarIcon size={12} filled />
+                  ) : it.icon === "recent" ? (
+                    <ClockIcon size={12} />
+                  ) : it.icon === "task" ? (
+                    <BoardIcon size={13} />
+                  ) : it.icon === "wiki" ? (
+                    <DocIcon size={13} />
+                  ) : it.icon === "project" ? (
+                    <FolderIcon size={13} />
+                  ) : (
+                    <PlusIcon size={12} />
+                  )}
                 </span>
                 <span className="cmd-label">{it.label}</span>
                 <span className="muted cmd-group">{it.hint || it.group}</span>

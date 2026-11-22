@@ -12,11 +12,12 @@ import { WikiHistoryDrawer } from "./WikiHistoryDrawer";
 import { WikiIndex } from "./WikiIndex";
 import { useCurrentProject } from "../projects/ProjectLayout";
 import { EditorSuggestBar, useEditorSuggest } from "../../components/EditorSuggest";
-import { ChevronIcon, EditIcon, HistoryIcon, PaperclipIcon, PlusIcon, TrashIcon } from "../../components/icons";
+import { ChevronIcon, EditIcon, HistoryIcon, PaperclipIcon, PlusIcon, StarIcon, TrashIcon } from "../../components/icons";
 import { Markdown, TableOfContents } from "../../components/Markdown";
 import { MarkdownToolbar } from "../../components/MarkdownToolbar";
 import { extractHeadings } from "../../lib/markdownHelpers";
 import { can } from "../../lib/permissions";
+import { recordRecent, removeBookmark, togglePin, useNavBookmarks } from "../../lib/recentsAndPins";
 import { PROJECT_EVENT, type ProjectEventDetail } from "../../lib/sse";
 import { extractImageFile, insertUploadedImage } from "../../lib/editorUpload";
 import { timeAgo, todayYmd } from "../../lib/time";
@@ -62,6 +63,21 @@ export function WikiPage() {
   const [createdNotice, setCreatedNotice] = useState<{ id: string; key: string; title: string } | null>(null);
   const mdWrapRef = useRef<HTMLDivElement>(null);
   const suggest = useEditorSuggest(draft.content, editorCursor, pages, members);
+  const { pins } = useNavBookmarks();
+  const isPagePinned = Boolean(page && pins.some((p) => p.kind === "wiki" && p.id === page.id));
+
+  useEffect(() => {
+    if (!page) return;
+    recordRecent({
+      kind: "wiki",
+      id: page.id,
+      projectId: project.id,
+      projectKey: project.key,
+      label: project.key,
+      title: page.title,
+      path: `${basePath}/${page.id}`,
+    });
+  }, [page?.id, page?.title, project.id, project.key, basePath]);
 
   // HWP·HWPX·DOCX·PDF·Markdown 파일 → 새 위키 페이지
   const importFile = async (file: File | undefined) => {
@@ -300,6 +316,7 @@ export function WikiPage() {
     if (!page || !confirm(`"${page.title}" 페이지를 삭제할까요?`)) return;
     try {
       await wikiApi.remove(project.id, page.id);
+      removeBookmark("wiki", page.id);
       await reloadTree();
       navigate(basePath);
     } catch (e) {
@@ -394,6 +411,25 @@ export function WikiPage() {
                 ))}
                 <span className="current">{page.title}</span>
               </nav>
+              <button
+                type="button"
+                className={`icon-btn star-btn ${isPagePinned ? "is-pinned" : ""}`}
+                title={isPagePinned ? "즐겨찾기 해제" : "즐겨찾기에 고정"}
+                aria-pressed={isPagePinned}
+                onClick={() =>
+                  togglePin({
+                    kind: "wiki",
+                    id: page.id,
+                    projectId: project.id,
+                    projectKey: project.key,
+                    label: project.key,
+                    title: page.title,
+                    path: `${basePath}/${page.id}`,
+                  })
+                }
+              >
+                <StarIcon size={13} filled={isPagePinned} />
+              </button>
               <ExportMenu projectId={project.id} pageId={page.id} hasChildren={pages.some((p) => p.parent_id === page.id)} />
               <button className="btn btn-sm" onClick={() => setHistoryOpen(true)} title="버전 히스토리">
                 <HistoryIcon size={12} /> 히스토리

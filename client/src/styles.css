@@ -2336,3 +2336,78 @@ button.tile.fill-run.is-active {
   display: flex;
   gap: 6px;
 }
+
+/* ==========================================================================
+   MW-24: 즐겨찾기(고정) 및 최근 본 항목
+   ========================================================================== */
+.star-btn.is-pinned {
+  color: var(--wait);
+}
+.star-btn.is-pinned:hover {
+  color: var(--wait);
+  background: var(--wait-soft);
+}
+.side-bookmark-section {
+  margin-top: 10px;
+  padding-top: 6px;
+  border-top: 1px solid var(--line);
+}
+.side-bookmark-head {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  background: transparent;
+  border: none;
+  text-align: left;
+  padding: 4px 8px;
+}
+.side-bookmark-head.is-toggle {
+  cursor: pointer;
+  border-radius: var(--r-row);
+}
+.side-bookmark-head.is-toggle:hover {
+  background: var(--subtle);
+}
+.side-bookmark-head svg:last-child {
+  margin-left: auto;
+  transition: transform var(--quick) var(--ease);
+}
+.side-bookmark-head svg.is-open {
+  transform: rotate(90deg);
+}
+.side-bookmark-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.side-bookmark-link {
+  flex: 1;
+  min-width: 0;
+  padding-left: 12px;
+}
+.side-bookmark-link .name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.side-bookmark-unpin {
+  opacity: 0;
+  border: none;
+  background: transparent;
+  color: var(--ink3);
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  font-size: 13px;
+  line-height: 1;
+  flex: none;
+}
+.side-bookmark-row:hover .side-bookmark-unpin,
+.side-bookmark-unpin:focus-visible {
+  opacity: 1;
+}
+.side-bookmark-unpin:hover {
+  background: var(--subtle);
+  color: var(--err-text);
+}
