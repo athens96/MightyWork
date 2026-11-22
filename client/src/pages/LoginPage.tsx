@@ -3,6 +3,7 @@ import { GoogleLogin } from "@react-oauth/google";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { ApiError } from "../api/http";
+import { APP_VERSION } from "../lib/version";
 import { useTheme } from "../theme";
 
 export function LoginPage() {
@@ -21,7 +22,9 @@ export function LoginPage() {
       <div className="card login-card">
         <img className="brand-logo" src="/mascot-256.png" alt="MightyWork" width={88} height={88} />
         <div>
-          <h1 className="dash-title">MightyWork</h1>
+          <h1 className="dash-title">
+            MightyWork <span className="brand-ver">v{APP_VERSION}</span>
+          </h1>
           <p className="dash-sub">프로젝트별 일감 파이프라인 · 위키</p>
         </div>
         <GoogleLogin

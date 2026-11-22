@@ -19,6 +19,7 @@ from mcp.types import Icon, ToolAnnotations
 from pydantic import AnyHttpUrl, ValidationError
 
 from app.core.config import Settings
+from app.core.version import APP_VERSION
 from app.db import Database
 from app.models.comment import Comment
 from app.models.common import utcnow
@@ -71,6 +72,7 @@ class MightyWorkTokenVerifier(TokenVerifier):
 def build_mcp(settings: Settings, db: Database) -> MCPServer:
     mcp = MCPServer(
         "MightyWork",
+        version=APP_VERSION,
         instructions=INSTRUCTIONS,
         website_url=settings.app_url,
         icons=[Icon(src=f"{oauth.base_url(settings)}/icon.png", mime_type="image/png", sizes=["192x192"])],

@@ -823,6 +823,17 @@ mark { background: color-mix(in srgb, var(--wait) 35%, transparent); color: inhe
 /* 브랜드 (MightyCode 마스코트 아이콘) */
 .side-brand { display: flex; align-items: center; gap: 8px; margin: 10px 10px 0; font-size: 13px; font-weight: 700; color: var(--ink); }
 .side-brand img { border-radius: 50%; }
+.brand-ver {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--ink-muted);
+  padding: 1px 5px;
+  border-radius: 5px;
+  border: 1px solid var(--line);
+  background: var(--card-raised);
+  vertical-align: middle;
+}
 .side-brand + .side-search { margin-top: 8px; }
 .brand-logo { border-radius: 50%; filter: drop-shadow(0 4px 10px rgb(36 89 230 / 0.25)); }
 .consent-brand { display: flex; align-items: center; gap: 8px; }

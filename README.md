@@ -1,6 +1,8 @@
-# MightyWork
+# MightyWork `v0.1.0`
 
 개발 파이프라인 기반 **일감 관리** + 노션/컨플루언스 스타일 **위키** 도구.
+
+> 현재 버전: `0.1.0` ([VERSION](VERSION) · [CHANGELOG.md](CHANGELOG.md)) — 버전 갱신은 `./scripts/bump-version.sh <patch|minor|major|X.Y.Z>` 사용.
 
 **프로젝트** 단위로 운영한다. 프로젝트마다 고유 키(예: `MW`)가 있고, 일감과 위키는 각 프로젝트에 속한다.
 일감 번호는 프로젝트별로 `MW-1, MW-2 …` 순서로 발급되며 삭제돼도 재사용하지 않는다.

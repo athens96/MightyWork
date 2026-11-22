@@ -1,8 +1,12 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import pkg from "./package.json" with { type: "json" };
 
 export default defineConfig({
   plugins: [react()],
+  define: {
+    __APP_VERSION__: JSON.stringify(pkg.version),
+  },
   server: {
     port: 5174,
     strictPort: true, // 포트가 사용 중이면 다른 포트로 넘어가지 않고 실패(구글 승인 원본과 일치해야 함)

@@ -1,4 +1,5 @@
 from app.core.config import Settings
+from app.core.version import APP_VERSION
 from app.main import create_app
 from app.api.deps import get_google_verifier
 from fastapi.testclient import TestClient
@@ -7,7 +8,7 @@ from tests.conftest import fake_verifier
 
 
 def test_health(client):
-    assert client.get("/api/health").json() == {"status": "ok"}
+    assert client.get("/api/health").json() == {"status": "ok", "version": APP_VERSION}
 
 
 def test_requires_auth(client):

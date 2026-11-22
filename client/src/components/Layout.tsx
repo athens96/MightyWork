@@ -4,6 +4,7 @@ import { notificationsApi } from "../api";
 import { useAuth } from "../auth/AuthContext";
 import { useProjects } from "../features/projects/ProjectsContext";
 import { subscribeSSE } from "../lib/sse";
+import { APP_VERSION } from "../lib/version";
 import { useTheme } from "../theme";
 import { CommandPalette } from "./CommandPalette";
 import { QuickCreateModal, ShortcutsModal } from "./QuickCreateModal";
@@ -75,9 +76,10 @@ export function Layout() {
   return (
     <div className="app">
       <aside className="sidebar">
-        <Link to="/projects" className="side-brand" title="MightyWork">
+        <Link to="/projects" className="side-brand" title={`MightyWork v${APP_VERSION}`}>
           <img src="/favicon.svg" alt="" width={22} height={22} />
           MightyWork
+          <span className="brand-ver">v{APP_VERSION}</span>
         </Link>
         <label className="side-search">
           <SearchIcon size={13} />

@@ -33,6 +33,7 @@ from app.api.routes import (
     wiki,
 )
 from app.core.config import Settings
+from app.core.version import APP_VERSION
 from app.db import Database
 from app.mcp_server import build_mcp, transport_security
 from app.models.oauth import SCOPES
@@ -57,7 +58,7 @@ def create_app(settings: Settings | None = None, db: Database | None = None) -> 
         async with mcp.session_manager.run():  # 마운트한 하위 앱의 lifespan 은 실행되지 않으므로 여기서
             yield
 
-    app = FastAPI(title=f"{settings.app_name} API", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(title=f"{settings.app_name} API", version=APP_VERSION, lifespan=lifespan)
     app.state.settings = settings
     app.state.db = db
     app.state.oauth_store = db.make_oauth_store() or Store()
@@ -83,7 +84,11 @@ def create_app(settings: Settings | None = None, db: Database | None = None) -> 
 
     @api.get("/health", tags=["system"])
     def health() -> dict[str, str]:
-        return {"status": "ok"}
+        return {"status": "ok", "version": APP_VERSION}
+
+    @api.get("/version", tags=["system"])
+    def app_version() -> dict[str, str]:
+        return {"name": settings.app_name, "version": APP_VERSION}
 
     @api.get("/mcp-info", tags=["system"])
     def mcp_info() -> dict[str, object]:
