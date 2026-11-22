@@ -5,7 +5,9 @@ import { can as canDo } from "../../lib/permissions";
 import { useAuth } from "../../auth/AuthContext";
 import { PlusIcon } from "../../components/icons";
 import { TASK_CREATED_EVENT } from "../../components/QuickCreateModal";
+import { RefreshButton } from "../../components/RefreshButton";
 import { PROJECT_EVENT, subscribeSSE, type ProjectEventDetail, type SSEStatus } from "../../lib/sse";
+import { useAutoRefresh } from "../../lib/useAutoRefresh";
 import { dueState } from "../../lib/time";
 import type { Cycle, Milestone, Permission, PipelineStage, PipelineStageInfo, Priority, SavedView, Task, TaskBulkRequest, TaskUpdate, User } from "../../types";
 import { useCurrentProject } from "../projects/ProjectLayout";
@@ -97,18 +99,24 @@ export function TaskBoardPage() {
     reload();
   }, [reload]);
 
+  const { refreshing, lastUpdated, refresh, markUpdated } = useAutoRefresh(reload, {
+    intervalMs: 30_000,
+    shortcutKey: true,
+  });
+
   useEffect(() => {
     const onQuick = (e: Event) => {
       const created = (e as CustomEvent<Task>).detail;
       if (created?.project_id === project.id) {
         setTasks((prev) => (prev.some((x) => x.id === created.id) ? prev : [...prev, created]));
+        markUpdated();
       }
     };
     window.addEventListener(TASK_CREATED_EVENT, onQuick);
     return () => window.removeEventListener(TASK_CREATED_EVENT, onQuick);
-  }, [project.id]);
+  }, [project.id, markUpdated]);
 
-  // MW-5: SSE 실시간 프로젝트 스트림 구독 (보드·상세·알림 자동 갱신)
+  // MW-5 & MW-14: SSE 실시간 프로젝트 스트림 구독 + 재연결 시 전체 동기화
   useEffect(() => {
     let refreshTimer: number | undefined;
     const stop = subscribeSSE(
@@ -120,7 +128,16 @@ export function TaskBoardPage() {
           }),
         );
         if (msg.event === "pipeline.updated") {
-          pipelineApi.forProject(project.id).then(setStages, () => {});
+          pipelineApi.forProject(project.id).then((p) => {
+            setStages(p);
+            markUpdated();
+          }, () => {});
+        }
+        if (msg.event === "cycle.updated") {
+          cyclesApi.list(project.id).then(setCycles, () => {});
+        }
+        if (msg.event === "milestone.updated") {
+          milestonesApi.list(project.id).then(setMilestones, () => {});
         }
         if (msg.event === "triage.updated") {
           triageApi.list(project.id).then((tr) => setTriageCount(tr.filter((x) => x.triage_status === "pending").length), () => {});
@@ -128,17 +145,23 @@ export function TaskBoardPage() {
         if (msg.event.startsWith("task.") || msg.event.startsWith("comment.") || msg.event === "github.linked") {
           if (refreshTimer) window.clearTimeout(refreshTimer);
           refreshTimer = window.setTimeout(() => {
-            tasksApi.list(project.id).then(setTasks, () => {});
+            tasksApi.list(project.id).then((list) => {
+              setTasks(list);
+              markUpdated();
+            }, () => {});
           }, 150);
         }
       },
       setLiveStatus,
+      () => {
+        void reload().then(markUpdated, () => {});
+      },
     );
     return () => {
       if (refreshTimer) window.clearTimeout(refreshTimer);
       stop();
     };
-  }, [project.id]);
+  }, [project.id, reload, markUpdated]);
 
   const usersById = useMemo(() => new Map(users.map((u) => [u.id, u])), [users]);
   const allTags = useMemo(() => [...new Set(tasks.flatMap((t) => t.tags))].sort((a, b) => a.localeCompare(b)), [tasks]);
@@ -325,13 +348,14 @@ export function TaskBoardPage() {
         ) : (
           <span className="board-create muted readonly-note">보기 권한만 있어 일감을 등록할 수 없습니다.</span>
         )}
-        <div className="row" style={{ gap: 8 }}>
+        <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+          <RefreshButton refreshing={refreshing} lastUpdated={lastUpdated} onClick={refresh} shortcut />
           <Link to={`/projects/${project.id}/triage`} className="btn btn-sm" title="트리아지 / 인테이크 대기열">
             트리아지{triageCount > 0 && <span className="pill tone-wait" style={{ marginLeft: 5 }}>{triageCount}</span>}
           </Link>
           <span
             className={`live-pill ${liveStatus === "connected" ? "is-live" : ""}`}
-            title={liveStatus === "connected" ? "실시간 동기화 연결됨 (SSE)" : "실시간 연결 재시도 중"}
+            title={liveStatus === "connected" ? "실시간 동기화 연결됨 (SSE) · 30초마다 자동 보강" : "실시간 연결 재시도 중 · 30초마다 자동 새로고침"}
           >
             <span className="live-dot" />
             {liveStatus === "connected" ? "실시간" : "연결 중"}

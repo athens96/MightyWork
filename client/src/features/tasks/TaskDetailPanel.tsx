@@ -5,9 +5,11 @@ import { ApiError, saveBlob } from "../../api/http";
 import { useAuth } from "../../auth/AuthContext";
 import { EditorSuggestBar, useEditorSuggest } from "../../components/EditorSuggest";
 import { CloseIcon, DocIcon, EditIcon, LinkIcon, PaperclipIcon } from "../../components/icons";
+import { RefreshButton } from "../../components/RefreshButton";
 import { makeBranchName } from "../../lib/branchName";
 import { extractImageFile, insertUploadedImage } from "../../lib/editorUpload";
 import { PROJECT_EVENT, type ProjectEventDetail } from "../../lib/sse";
+import { useAutoRefresh } from "../../lib/useAutoRefresh";
 import { useLinkResolver } from "../../lib/useLinkResolver";
 import { Markdown } from "../../components/Markdown";
 import type { Attachment, Comment, GitHubLink, Task, TaskActivity, TaskLink, TaskLinkKind, TaskUpdate, WikiPageSummary } from "../../types";
@@ -55,27 +57,30 @@ export function TaskDetailPanel() {
     wikiApi.list(project.id).then(setPages, () => {});
   }, [project.id]);
 
-  useEffect(() => {
-    let cancelled = false;
-    setTask(null);
-    setNotFound(false);
-    setDesc(null);
-    setError(null);
-    Promise.all([
-      tasksApi.get(project.id, taskId),
-      commentsApi.list(project.id, taskId),
-      tasksApi.activity(project.id, taskId),
-      tasksApi.wikiRefs(project.id, taskId),
-      tasksApi.wikiLinks(project.id, taskId),
-      tasksApi.subtasks(project.id, taskId),
-      tasksApi.links(project.id, taskId),
-      attachmentsApi.list(project.id, { task_id: taskId }),
-      githubApi.taskLinks(project.id, taskId).catch(() => [] as GitHubLink[]),
-    ])
-      .then(([t, c, a, w, wl, subs, ls, atts, gh]) => {
-        if (cancelled) return;
+  const loadDetail = useCallback(
+    async (silent: boolean) => {
+      if (!taskId) return;
+      if (!silent) {
+        setTask(null);
+        setNotFound(false);
+        setDesc(null);
+        setError(null);
+      }
+      try {
+        const [t, c, a, w, wl, subs, ls, atts, gh] = await Promise.all([
+          tasksApi.get(project.id, taskId),
+          commentsApi.list(project.id, taskId),
+          tasksApi.activity(project.id, taskId),
+          tasksApi.wikiRefs(project.id, taskId),
+          tasksApi.wikiLinks(project.id, taskId),
+          tasksApi.subtasks(project.id, taskId),
+          tasksApi.links(project.id, taskId),
+          attachmentsApi.list(project.id, { task_id: taskId }),
+          githubApi.taskLinks(project.id, taskId).catch(() => [] as GitHubLink[]),
+        ]);
         setTask(t);
-        setTitle(t.title);
+        // 편집 중이 아닐 때만 제목 입력 동기화
+        if (!silent || document.activeElement?.tagName !== "INPUT") setTitle(t.title);
         setComments(c);
         setActivity(a);
         setWikiRefs(w);
@@ -84,12 +89,22 @@ export function TaskDetailPanel() {
         setTaskLinks(ls);
         setAttachments(atts);
         setGithubLinks(gh);
-      })
-      .catch(() => !cancelled && setNotFound(true));
-    return () => {
-      cancelled = true;
-    };
+        onChanged(t);
+      } catch {
+        if (!silent) setNotFound(true);
+      }
+    },
+    [project.id, taskId, onChanged],
+  );
+
+  useEffect(() => {
+    void loadDetail(false);
   }, [project.id, taskId]);
+
+  const { refreshing: detailRefreshing, lastUpdated: detailUpdated, refresh: refreshDetail } = useAutoRefresh(
+    () => loadDetail(true),
+    { intervalMs: 30_000, enabled: Boolean(taskId) },
+  );
 
   const boardTask = tasks.find((t) => t.id === taskId);
   useEffect(() => {
@@ -238,6 +253,7 @@ export function TaskDetailPanel() {
             </span>
           )}
           <span className="sheet-title">{task?.title}</span>
+          <RefreshButton compact refreshing={detailRefreshing} lastUpdated={detailUpdated} onClick={refreshDetail} />
           {task && (
             <button
               className="btn btn-sm btn-ghost"

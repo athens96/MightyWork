@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { pipelineApi, tasksApi } from "../../api";
+import { RefreshButton } from "../../components/RefreshButton";
 import { can } from "../../lib/permissions";
 import { dueState, formatDate } from "../../lib/time";
+import { useAutoRefresh } from "../../lib/useAutoRefresh";
 import type { MyTask, PipelineStage, PipelineStageInfo } from "../../types";
 import { useProjects } from "../projects/ProjectsContext";
 import { PRIORITY_LABEL, PRIORITY_META, STAGE_TONE } from "./tones";
@@ -20,19 +22,28 @@ export function MyTasksPage() {
   const [projectFilter, setProjectFilter] = useState("");
   const [loading, setLoading] = useState(true);
 
-  const reload = useCallback(() => {
-    setLoading(true);
-    Promise.all([pipelineApi.get(), tasksApi.my({ scope, due_soon: dueSoon, include_done: includeDone })])
-      .then(([p, t]) => {
+  const reload = useCallback(
+    async (showLoader = false) => {
+      if (showLoader) setLoading(true);
+      try {
+        const [p, t] = await Promise.all([pipelineApi.get(), tasksApi.my({ scope, due_soon: dueSoon, include_done: includeDone })]);
         setStages(p);
         setTasks(t);
-      })
-      .finally(() => setLoading(false));
-  }, [scope, dueSoon, includeDone]);
+      } finally {
+        if (showLoader) setLoading(false);
+      }
+    },
+    [scope, dueSoon, includeDone],
+  );
 
   useEffect(() => {
-    reload();
+    void reload(true);
   }, [reload]);
+
+  const { refreshing, lastUpdated, refresh } = useAutoRefresh(() => reload(false), {
+    intervalMs: 30_000,
+    shortcutKey: true,
+  });
 
   const projectById = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects]);
   const visible = useMemo(() => (projectFilter ? tasks.filter((t) => t.project_id === projectFilter) : tasks), [tasks, projectFilter]);
@@ -59,6 +70,9 @@ export function MyTasksPage() {
           <p className="dash-sub">
             모든 프로젝트의 내 작업을 한 곳에서 관리 · {visible.length}건
           </p>
+        </div>
+        <div className="row-actions">
+          <RefreshButton refreshing={refreshing} lastUpdated={lastUpdated} onClick={refresh} shortcut />
         </div>
       </header>
 

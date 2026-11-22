@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { notificationsApi } from "../../api";
+import { RefreshButton } from "../../components/RefreshButton";
 import { timeAgo } from "../../lib/time";
+import { useAutoRefresh } from "../../lib/useAutoRefresh";
 import type { NotificationItem } from "../../types";
 
 const KIND_LABEL: Record<NotificationItem["kind"], string> = {
@@ -19,20 +21,28 @@ export function NotificationsPage() {
   const [filter, setFilter] = useState<"all" | "unread">("all");
   const [loading, setLoading] = useState(true);
 
-  const reload = useCallback(() => {
-    setLoading(true);
-    notificationsApi
-      .list(filter === "unread")
-      .then((res) => {
+  const reload = useCallback(
+    async (showLoader = false) => {
+      if (showLoader) setLoading(true);
+      try {
+        const res = await notificationsApi.list(filter === "unread");
         setItems(res.items);
         setUnread(res.unread_count);
-      })
-      .finally(() => setLoading(false));
-  }, [filter]);
+      } finally {
+        if (showLoader) setLoading(false);
+      }
+    },
+    [filter],
+  );
 
   useEffect(() => {
-    reload();
+    void reload(true);
   }, [reload]);
+
+  const { refreshing, lastUpdated, refresh } = useAutoRefresh(() => reload(false), {
+    intervalMs: 30_000,
+    shortcutKey: true,
+  });
 
   const openItem = async (n: NotificationItem) => {
     if (!n.read) {
@@ -57,6 +67,7 @@ export function NotificationsPage() {
           <p className="dash-sub">읽지 않은 알림 {unread}건 · @멘션, 일감 배정, 덧글, 소유권 변경</p>
         </div>
         <div className="row-actions">
+          <RefreshButton refreshing={refreshing} lastUpdated={lastUpdated} onClick={refresh} shortcut />
           <div className="segment">
             <button aria-pressed={filter === "all"} onClick={() => setFilter("all")}>
               전체

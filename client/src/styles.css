@@ -1330,3 +1330,23 @@ mark { background: color-mix(in srgb, var(--wait) 35%, transparent); color: inhe
   font-weight: 600;
   letter-spacing: 0.01em;
 }
+
+/* MW-14: 수동 새로고침 버튼 & 회전 애니메이션 */
+@keyframes mw-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.refresh-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+.refresh-btn .is-spinning {
+  animation: mw-spin 0.7s linear infinite;
+}
+.refresh-clock {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--ink-muted);
+}

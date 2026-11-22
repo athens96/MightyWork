@@ -31,11 +31,22 @@ export function Layout() {
 
   useEffect(() => {
     if (!user) return;
-    return subscribeSSE("/events", (msg) => {
-      if (msg.event === "notification.created") {
-        notificationsApi.list(true).then((r) => setUnread(r.unread_count), () => {});
-      }
-    });
+    const fetchUnread = () => notificationsApi.list(true).then((r) => setUnread(r.unread_count), () => {});
+    const stopSSE = subscribeSSE(
+      "/events",
+      (msg) => {
+        if (msg.event === "notification.created") fetchUnread();
+      },
+      undefined,
+      fetchUnread,
+    );
+    const id = window.setInterval(() => {
+      if (document.visibilityState === "visible" && navigator.onLine !== false) fetchUnread();
+    }, 60_000);
+    return () => {
+      window.clearInterval(id);
+      stopSSE();
+    };
   }, [user?.id]);
 
   useEffect(() => {

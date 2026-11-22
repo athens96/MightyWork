@@ -66,8 +66,10 @@ export function subscribeSSE(
   path: string,
   onMessage: (msg: SSEMessage) => void,
   onStatus?: (status: SSEStatus) => void,
+  onReconnect?: () => void,
 ): () => void {
   let closed = false;
+  let hasConnectedOnce = false;
   let lastEventId: string | undefined;
   let retryMs = 1000;
   let timer: number | undefined;
@@ -97,7 +99,10 @@ export function subscribeSSE(
       }
 
       retryMs = 1000;
+      const reconnected = hasConnectedOnce;
+      hasConnectedOnce = true;
       onStatus?.("connected");
+      if (reconnected) onReconnect?.();
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
@@ -121,7 +126,7 @@ export function subscribeSSE(
     }
   };
 
-  const onOnline = () => {
+  const reconnectNow = () => {
     if (closed) return;
     if (timer) {
       window.clearTimeout(timer);
@@ -130,12 +135,17 @@ export function subscribeSSE(
       connect();
     }
   };
-  window.addEventListener("online", onOnline);
+  const onVisible = () => {
+    if (document.visibilityState === "visible") reconnectNow();
+  };
+  window.addEventListener("online", reconnectNow);
+  document.addEventListener("visibilitychange", onVisible);
   connect();
 
   return () => {
     closed = true;
-    window.removeEventListener("online", onOnline);
+    window.removeEventListener("online", reconnectNow);
+    document.removeEventListener("visibilitychange", onVisible);
     if (timer) window.clearTimeout(timer);
     controller?.abort();
   };

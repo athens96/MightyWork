@@ -2,8 +2,10 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { tasksApi, triageApi } from "../../api";
 import { PlusIcon } from "../../components/icons";
+import { RefreshButton } from "../../components/RefreshButton";
 import { can as canDo } from "../../lib/permissions";
 import { timeAgo } from "../../lib/time";
+import { useAutoRefresh } from "../../lib/useAutoRefresh";
 import type { IntakeConfig, Priority, Task } from "../../types";
 import { useCurrentProject } from "../projects/ProjectLayout";
 import { PRIORITY_LABEL, PRIORITY_META } from "./tones";
@@ -38,6 +40,11 @@ export function TriagePage() {
   useEffect(() => {
     reload();
   }, [reload]);
+
+  const { refreshing, lastUpdated, refresh } = useAutoRefresh(reload, {
+    intervalMs: 30_000,
+    shortcutKey: true,
+  });
 
   const submitIntake = async (e: FormEvent) => {
     e.preventDefault();
@@ -98,6 +105,7 @@ export function TriagePage() {
           </p>
         </div>
         <div className="row" style={{ gap: 8 }}>
+          <RefreshButton refreshing={refreshing} lastUpdated={lastUpdated} onClick={refresh} shortcut />
           <label className="kind-toggle">
             <input type="checkbox" checked={includeDeclined} onChange={(e) => setIncludeDeclined(e.target.checked)} /> 거절됨 포함
           </label>

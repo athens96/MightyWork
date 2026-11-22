@@ -2,7 +2,9 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react
 import { Link } from "react-router-dom";
 import { milestonesApi } from "../../api";
 import { PlusIcon, TrashIcon } from "../../components/icons";
+import { RefreshButton } from "../../components/RefreshButton";
 import { can as canDo } from "../../lib/permissions";
+import { useAutoRefresh } from "../../lib/useAutoRefresh";
 import type { Milestone, MilestoneStatus, Project } from "../../types";
 
 const STATUS_META: Record<MilestoneStatus, { label: string; tone: string }> = {
@@ -35,18 +37,26 @@ export function MilestonesSection({ project }: { project: Project }) {
   const canEdit = canDo(project, "edit");
   const canDelete = canDo(project, "delete");
 
-  const reload = useCallback(async () => {
-    setLoading(true);
-    try {
-      setMilestones(await milestonesApi.list(project.id));
-    } finally {
-      setLoading(false);
-    }
-  }, [project.id]);
+  const reload = useCallback(
+    async (showLoader = false) => {
+      if (showLoader) setLoading(true);
+      try {
+        setMilestones(await milestonesApi.list(project.id));
+      } finally {
+        if (showLoader) setLoading(false);
+      }
+    },
+    [project.id],
+  );
 
   useEffect(() => {
-    reload();
+    void reload(true);
   }, [reload]);
+
+  const { refreshing, lastUpdated, refresh } = useAutoRefresh(() => reload(false), {
+    intervalMs: 30_000,
+    shortcutKey: true,
+  });
 
   const submitCreate = async (e: FormEvent) => {
     e.preventDefault();
@@ -117,11 +127,14 @@ export function MilestonesSection({ project }: { project: Project }) {
             릴리즈(예: v1.0)나 주요 에픽 단위로 일감을 묶고 목표일 기준 진척률을 한눈에 추적합니다.
           </p>
         </div>
-        {canCreate && (
-          <button className="btn btn-primary" onClick={() => setShowCreate((s) => !s)}>
-            <PlusIcon size={11} /> 새 마일스톤
-          </button>
-        )}
+        <div className="row" style={{ gap: 8 }}>
+          <RefreshButton refreshing={refreshing} lastUpdated={lastUpdated} onClick={refresh} shortcut />
+          {canCreate && (
+            <button className="btn btn-primary" onClick={() => setShowCreate((s) => !s)}>
+              <PlusIcon size={11} /> 새 마일스톤
+            </button>
+          )}
+        </div>
       </div>
 
       {showCreate && (

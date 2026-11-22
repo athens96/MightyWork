@@ -2,7 +2,9 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react
 import { Link, useSearchParams } from "react-router-dom";
 import { cyclesApi } from "../../api";
 import { PlusIcon, TrashIcon } from "../../components/icons";
+import { RefreshButton } from "../../components/RefreshButton";
 import { can as canDo } from "../../lib/permissions";
+import { useAutoRefresh } from "../../lib/useAutoRefresh";
 import type { Cycle, CycleStatus } from "../../types";
 import { useCurrentProject } from "../projects/ProjectLayout";
 import { MilestonesSection } from "./MilestonesSection";
@@ -115,18 +117,27 @@ export function CyclesPage() {
   const canEdit = canDo(project, "edit");
   const canDelete = canDo(project, "delete");
 
-  const reload = useCallback(async () => {
-    setLoading(true);
-    try {
-      setCycles(await cyclesApi.list(project.id));
-    } finally {
-      setLoading(false);
-    }
-  }, [project.id]);
+  const reload = useCallback(
+    async (showLoader = false) => {
+      if (showLoader) setLoading(true);
+      try {
+        setCycles(await cyclesApi.list(project.id));
+      } finally {
+        if (showLoader) setLoading(false);
+      }
+    },
+    [project.id],
+  );
 
   useEffect(() => {
-    reload();
+    void reload(true);
   }, [reload]);
+
+  const { refreshing, lastUpdated, refresh } = useAutoRefresh(() => reload(false), {
+    intervalMs: 30_000,
+    enabled: activeTab === "cycles",
+    shortcutKey: activeTab === "cycles",
+  });
 
   const activeCycles = useMemo(() => cycles.filter((c) => c.status === "active"), [cycles]);
   const completedCycles = useMemo(() => cycles.filter((c) => c.status === "completed"), [cycles]);
@@ -241,11 +252,14 @@ export function CyclesPage() {
             주간·격주 실행 단위로 일감을 묶고 번다운과 속도를 추적합니다.
           </p>
         </div>
-        {canCreate && (
-          <button className="btn btn-primary" onClick={() => setShowCreate((s) => !s)}>
-            <PlusIcon size={11} /> 새 사이클
-          </button>
-        )}
+        <div className="row" style={{ gap: 8 }}>
+          <RefreshButton refreshing={refreshing} lastUpdated={lastUpdated} onClick={refresh} shortcut />
+          {canCreate && (
+            <button className="btn btn-primary" onClick={() => setShowCreate((s) => !s)}>
+              <PlusIcon size={11} /> 새 사이클
+            </button>
+          )}
+        </div>
       </div>
 
       {notice && (

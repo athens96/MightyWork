@@ -181,3 +181,10 @@ export const SparklesIcon = (p: P) => (
     <path d="M19 3v3M20.5 4.5h-3M5 17v3M6.5 18.5h-3" />
   </Icon>
 );
+
+export const RefreshIcon = (p: P) => (
+  <Icon {...p}>
+    <path d="M21 12a9 9 0 1 1-2.64-6.36L21 8" />
+    <path d="M21 3v5h-5" />
+  </Icon>
+);

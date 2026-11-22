@@ -3,8 +3,10 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { projectsApi } from "../../api";
 import { ApiError } from "../../api/http";
 import { BoardIcon, DocIcon, PlusIcon } from "../../components/icons";
+import { RefreshButton } from "../../components/RefreshButton";
 import { roleLabel } from "../../lib/permissions";
 import { timeAgo } from "../../lib/time";
+import { useAutoRefresh } from "../../lib/useAutoRefresh";
 import { useProjects } from "./ProjectsContext";
 
 /** 작업 현황(대시보드) 형식의 프로젝트 목록 */
@@ -15,6 +17,7 @@ export function ProjectListPage() {
   const keyInput = useRef<HTMLInputElement>(null);
   const [form, setForm] = useState({ key: "", name: "", description: "" });
   const [error, setError] = useState<string | null>(null);
+  const { refreshing, lastUpdated, refresh } = useAutoRefresh(reload, { intervalMs: 30_000, shortcutKey: true });
 
   // 사이드바 "프로젝트 추가"(#new)로 들어오면 생성 폼에 포커스
   useEffect(() => {
@@ -45,6 +48,9 @@ export function ProjectListPage() {
           <p className="dash-sub">
             프로젝트 {projects.length}개 · 발급된 일감 {issued}건 · 만든 순으로 정렬
           </p>
+        </div>
+        <div className="row-actions">
+          <RefreshButton refreshing={refreshing} lastUpdated={lastUpdated} onClick={refresh} shortcut />
         </div>
       </header>
 
