@@ -87,6 +87,11 @@ export function TaskCard({
         )}
         <span className="task-tint" />
         <span className="task-key">{taskKey}</span>
+        {task.version && (
+          <span className="version-badge" title={`버전 ${task.version}`}>
+            {task.version}
+          </span>
+        )}
         {running && !compact && (
           <span className="activity-bars" aria-hidden="true">
             <i />

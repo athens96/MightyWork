@@ -166,6 +166,7 @@ export interface TaskBulkRequest {
   assignee_id?: string | null;
   cycle_id?: string | null;
   milestone_id?: string | null;
+  version?: string | null;
   add_tags?: string[];
   remove_tags?: string[];
   delete?: boolean;
@@ -212,6 +213,7 @@ export interface Task {
   parent_id: string | null;
   cycle_id: string | null;
   milestone_id: string | null;
+  version: string | null; // 목표/릴리즈 버전 (예: v0.5.10, v0.6.x)
   assignee_id: string | null; // 작업자
   tags: string[]; // 레이블
   start_date: string | null; // YYYY-MM-DD
@@ -348,7 +350,7 @@ export interface Comment {
   updated_at: string;
 }
 
-export type TrackedField = "title" | "stage" | "priority" | "parent_id" | "cycle_id" | "milestone_id" | "assignee_id" | "start_date" | "due_date" | "estimate" | "tags";
+export type TrackedField = "title" | "stage" | "priority" | "parent_id" | "cycle_id" | "milestone_id" | "version" | "assignee_id" | "start_date" | "due_date" | "estimate" | "tags";
 
 export interface TaskActivity {
   id: string;

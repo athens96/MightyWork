@@ -2,7 +2,7 @@ from datetime import date, timedelta
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Response, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.api.deps import AccessDep, CurrentUser, DbDep, ProjectDep, SettingsDep, TaskDep, apply_patch, require
 from app.db import Database
@@ -57,9 +57,18 @@ class TaskBulkRequest(BaseModel):
     assignee_id: str | None = None
     cycle_id: str | None = None
     milestone_id: str | None = None
+    version: str | None = Field(default=None, max_length=40)
     add_tags: list[str] | None = None
     remove_tags: list[str] | None = None
     delete: bool = False
+
+    @field_validator("version", mode="before")
+    @classmethod
+    def _clean_version(cls, v: object) -> object:
+        if isinstance(v, str):
+            s = v.strip()
+            return s or None
+        return v
 
 
 class TaskBulkResult(BaseModel):
@@ -263,6 +272,7 @@ def list_tasks(
     parent_id: str | None = None,
     cycle_id: str | None = None,
     milestone_id: str | None = None,
+    version: str | None = None,
     include_triage: bool = False,
 ) -> list[TaskRead]:
     all_project_tasks = db.tasks.list(
@@ -275,6 +285,7 @@ def list_tasks(
             pair[0] += 1
             if t.stage == PipelineStage.DONE:
                 pair[1] += 1
+    ver_cf = version.strip().casefold() if version else None
     tasks = [
         t
         for t in all_project_tasks
@@ -283,6 +294,7 @@ def list_tasks(
         and (parent_id is None or t.parent_id == parent_id)
         and (cycle_id is None or t.cycle_id == cycle_id)
         and (milestone_id is None or t.milestone_id == milestone_id)
+        and (ver_cf is None or (t.version or "").casefold() == ver_cf)
     ]
     counts: dict[str, int] = {}
     for c in db.comments.list(lambda c: c.project_id == project.id):
@@ -392,6 +404,8 @@ def bulk_update_tasks(
             patch_data["cycle_id"] = body.cycle_id
         if "milestone_id" in body.model_fields_set:
             patch_data["milestone_id"] = body.milestone_id
+        if "version" in body.model_fields_set:
+            patch_data["version"] = body.version
         if body.add_tags or body.remove_tags:
             tags = list(task.tags)
             if body.remove_tags:

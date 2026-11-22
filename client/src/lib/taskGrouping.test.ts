@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Cycle, Milestone, PipelineStageInfo, Task, User } from "../types";
-import { formatMonthLabel, groupTasks, matchesQuickQuery, matchesStageGroup, partitionDoneByMonth } from "./taskGrouping";
+import { formatMonthLabel, groupTasks, matchesQuickQuery, matchesStageGroup, partitionDoneByMonth, sortVersionLabels } from "./taskGrouping";
 
 function makeTask(overrides: Partial<Task> = {}): Task {
   return {
@@ -14,6 +14,7 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     parent_id: null,
     cycle_id: overrides.cycle_id ?? null,
     milestone_id: overrides.milestone_id ?? null,
+    version: overrides.version ?? null,
     assignee_id: overrides.assignee_id ?? null,
     tags: overrides.tags ?? [],
     start_date: null,
@@ -154,11 +155,24 @@ describe("groupTasks", () => {
     },
   ];
   const items = [
-    makeTask({ number: 1, stage: "todo", priority: "low", assignee_id: null }),
-    makeTask({ number: 2, stage: "in_progress", priority: "urgent", assignee_id: "u2", milestone_id: "m1", cycle_id: "c1" }),
-    makeTask({ number: 3, stage: "done", priority: "high", assignee_id: "u1" }),
+    makeTask({ number: 1, stage: "todo", priority: "low", assignee_id: null, version: "v0.5.9" }),
+    makeTask({ number: 2, stage: "in_progress", priority: "urgent", assignee_id: "u2", milestone_id: "m1", cycle_id: "c1", version: "v0.5.10" }),
+    makeTask({ number: 3, stage: "done", priority: "high", assignee_id: "u1", version: null }),
   ];
   const ctx = { stages, usersById, milestones, cycles };
+
+  it("버전별 그룹핑과 자연 정렬이 v0.5.10 > v0.5.9 순으로 동작한다", () => {
+    expect(sortVersionLabels(["v0.5.9", "v0.6.0", "v0.5.10", "v0.6.x", "v0.7.0"])).toEqual([
+      "v0.7.0",
+      "v0.6.x",
+      "v0.6.0",
+      "v0.5.10",
+      "v0.5.9",
+    ]);
+    const groups = groupTasks(items, "version", ctx);
+    expect(groups.map((g) => g.label)).toEqual(["v0.5.10", "v0.5.9", "버전 미지정"]);
+    expect(matchesQuickQuery(items[1], "MC", "v0.5.10")).toBe(true);
+  });
 
   it("우선순위별 그룹핑이 긴급 → 높음 → 낮음 순으로 정렬된다", () => {
     const groups = groupTasks(items, "priority", ctx);

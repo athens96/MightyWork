@@ -2,7 +2,7 @@ from datetime import date
 from enum import Enum
 from typing import Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.models.common import Entity, new_id
 
@@ -83,6 +83,7 @@ class TaskBase(BaseModel):
     parent_id: str | None = None  # 상위 일감 (하위 일감 트리)
     cycle_id: str | None = None  # 소속 사이클(스프린트)
     milestone_id: str | None = None  # 소속 마일스톤(릴리즈/에픽)
+    version: str | None = Field(default=None, max_length=40)  # 목표/릴리즈 버전 (예: v0.5.10, v0.6.x)
     assignee_id: str | None = None  # 작업자
     tags: list[str] = []  # 레이블
     start_date: date | None = None  # 시작일
@@ -92,6 +93,14 @@ class TaskBase(BaseModel):
     triage_status: Literal["pending", "snoozed", "declined"] | None = None
     triage_snooze_until: date | None = None
     triage_source: str = Field(default="", max_length=120)
+
+    @field_validator("version", mode="before")
+    @classmethod
+    def _clean_version(cls, v: object) -> object:
+        if isinstance(v, str):
+            s = v.strip()
+            return s or None
+        return v
 
     @model_validator(mode="after")
     def _check_dates(self):
@@ -129,12 +138,21 @@ class TaskUpdate(BaseModel):
     parent_id: str | None = None
     cycle_id: str | None = None
     milestone_id: str | None = None
+    version: str | None = Field(default=None, max_length=40)
     assignee_id: str | None = None
     tags: list[str] | None = None
     start_date: date | None = None
     due_date: date | None = None
     estimate: int | None = Field(default=None, ge=0, le=100)
     checklist: list[ChecklistItem] | None = Field(default=None, max_length=200)
+
+    @field_validator("version", mode="before")
+    @classmethod
+    def _clean_version(cls, v: object) -> object:
+        if isinstance(v, str):
+            s = v.strip()
+            return s or None
+        return v
 
 
 class PipelineStageInfo(BaseModel):

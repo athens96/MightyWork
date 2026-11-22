@@ -117,7 +117,7 @@ export function TaskListView({
   }
 
   const selectable = !!(canEdit && selectedIds && onToggleSelect && onToggleAll);
-  const colSpan = selectable ? 8 : 7;
+  const colSpan = selectable ? 9 : 8;
   const visibleRowIds = useMemo(() => {
     const ids = activeOrVisible.map((t) => t.id);
     const prefix = groupBy === "none" ? "flat" : groupBy === "stage" ? "stage-done" : "tail";
@@ -171,6 +171,9 @@ export function TaskListView({
               ))}
             </span>
           )}
+        </td>
+        <td className="nowrap">
+          {t.version ? <span className="version-badge">{t.version}</span> : <span className="muted">—</span>}
         </td>
         <td className="nowrap">
           {canEdit ? (
@@ -256,6 +259,7 @@ export function TaskListView({
             )}
             <th>키</th>
             <th>제목</th>
+            <th>버전</th>
             <th>단계</th>
             <th>우선순위</th>
             <th>작업자</th>

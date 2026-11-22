@@ -24,7 +24,7 @@ def _sha256(value: str) -> str:
 def _index_entry(table: str, entity) -> tuple[str, str, str, str] | None:
     """(row_key, kind, project_id, target_id, text) 중 인덱스 대상이면 반환."""
     if table == "tasks":
-        parts = [entity.title, *entity.tags, entity.description, *(i.text for i in entity.checklist)]
+        parts = [entity.title, entity.version or "", *entity.tags, entity.description, *(i.text for i in entity.checklist)]
         return ("task", entity.project_id, entity.id, " ".join(p for p in parts if p).casefold())
     if table == "comments":
         return ("task", entity.project_id, entity.task_id, entity.body.casefold())

@@ -9,6 +9,7 @@ import { RefreshButton } from "../../components/RefreshButton";
 import { makeBranchName } from "../../lib/branchName";
 import { extractImageFile, insertUploadedImage } from "../../lib/editorUpload";
 import { PROJECT_EVENT, type ProjectEventDetail } from "../../lib/sse";
+import { sortVersionLabels } from "../../lib/taskGrouping";
 import { useAutoRefresh } from "../../lib/useAutoRefresh";
 import { useLinkResolver } from "../../lib/useLinkResolver";
 import { Markdown } from "../../components/Markdown";
@@ -610,6 +611,7 @@ export function TaskDetailPanel() {
               stages={stages}
               cycles={cycles}
               milestones={milestones}
+              versions={sortVersionLabels([...new Set(tasks.flatMap((t) => (t.version ? [t.version] : [])))])}
               users={users}
               assignees={members}
               readOnly={!editable}

@@ -158,6 +158,11 @@ export function MyTasksPage() {
                       <Link to={`/projects/${t.project_id}/tasks/${t.id}`} className="index-title">
                         {t.title}
                       </Link>
+                      {t.version && (
+                        <span className="version-badge" style={{ marginLeft: 6 }}>
+                          {t.version}
+                        </span>
+                      )}
                       {t.tags.length > 0 && (
                         <span className="list-tags">
                           {t.tags.map((tag) => (

@@ -25,6 +25,7 @@ export function QuickCreateModal({ open, onClose, projects, defaultProjectId }: 
   const [description, setDescription] = useState("");
   const [stage, setStage] = useState<PipelineStage>("backlog");
   const [priority, setPriority] = useState<Priority>("medium");
+  const [version, setVersion] = useState("");
   const [tagsText, setTagsText] = useState("");
   const [checklistItems, setChecklistItems] = useState<string[]>([]);
   const [dueDate, setDueDate] = useState("");
@@ -39,6 +40,7 @@ export function QuickCreateModal({ open, onClose, projects, defaultProjectId }: 
     setDescription("");
     setStage("backlog");
     setPriority("medium");
+    setVersion("");
     setTagsText("");
     setChecklistItems([]);
     setDueDate("");
@@ -82,6 +84,7 @@ export function QuickCreateModal({ open, onClose, projects, defaultProjectId }: 
         description,
         stage,
         priority,
+        version: version.trim() || null,
         tags,
         checklist: checklistItems.map((text) => ({ text, done: false })),
         due_date: dueDate || null,
@@ -145,6 +148,14 @@ export function QuickCreateModal({ open, onClose, projects, defaultProjectId }: 
                   </option>
                 ))}
               </select>
+              <input
+                className="quick-version-input mono"
+                value={version}
+                maxLength={40}
+                onChange={(e) => setVersion(e.target.value)}
+                placeholder="버전 (v0.1.0)"
+                aria-label="버전"
+              />
               <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} aria-label="마감일" />
             </div>
             <input autoFocus value={title} onChange={(e) => setTitle(e.target.value)} placeholder="일감 제목" required />

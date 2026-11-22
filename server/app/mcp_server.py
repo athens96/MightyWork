@@ -154,6 +154,7 @@ def build_mcp(settings: Settings, db: Database) -> MCPServer:
     def task_summary(p: Project, t: Task) -> dict[str, Any]:
         return {
             "key": f"{p.key}-{t.number}", "title": t.title, "stage": t.stage.value, "priority": t.priority.value,
+            "version": t.version,
             "assignee": email_of(t.assignee_id), "due_date": t.due_date.isoformat() if t.due_date else None, "tags": t.tags,
             "checklist": f"{sum(i.done for i in t.checklist)}/{len(t.checklist)}" if t.checklist else None,
         }
@@ -214,16 +215,23 @@ def build_mcp(settings: Settings, db: Database) -> MCPServer:
     def list_tasks(
         project: str,
         stage: PipelineStage | None = None,
+        version: str | None = None,
         assignee_email: str | None = None,
         mine: bool = False,
         limit: int = 50,
     ) -> dict[str, Any]:
-        """일감 목록. stage(backlog/todo/in_progress/review/qa/done)·작업자 이메일·내 일감(mine)으로 거릅니다."""
+        """일감 목록. stage(backlog/todo/in_progress/review/qa/done)·버전(version)·작업자 이메일·내 일감(mine)으로 거릅니다."""
         user = me()
         a = project_access(user, project)
         assignee = user.id if mine else (user_by_email(a.project, assignee_email) if assignee_email else None)
+        ver_cf = version.strip().casefold() if version else None
         tasks = sorted(
-            db.tasks.list(lambda t: t.project_id == a.project.id and (stage is None or t.stage == stage) and (assignee is None or t.assignee_id == assignee)),
+            db.tasks.list(
+                lambda t: t.project_id == a.project.id
+                and (stage is None or t.stage == stage)
+                and (ver_cf is None or (t.version or "").casefold() == ver_cf)
+                and (assignee is None or t.assignee_id == assignee)
+            ),
             key=lambda t: t.number,
         )
         return {"pipeline": {s.value: PIPELINE_LABELS[s] for s in PipelineStage}, "total": len(tasks),
@@ -288,6 +296,7 @@ def build_mcp(settings: Settings, db: Database) -> MCPServer:
         description: str = "",
         stage: PipelineStage = PipelineStage.BACKLOG,
         priority: Priority = Priority.MEDIUM,
+        version: str | None = None,
         parent: str | None = None,
         assignee_email: str | None = None,
         start_date: date | None = None,
@@ -295,11 +304,11 @@ def build_mcp(settings: Settings, db: Database) -> MCPServer:
         tags: list[str] | None = None,
         checklist: list[str] | None = None,
     ) -> dict[str, Any]:
-        """일감 만들기. 설명은 Markdown, parent 는 상위 일감 키('MW-1'), checklist 는 할 일 항목 문자열 목록."""
+        """일감 만들기. 설명은 Markdown, version 은 목표 버전('v0.6.0'), parent 는 상위 일감 키('MW-1'), checklist 는 할 일 항목 문자열 목록."""
         user = me(write=True)
         a = project_access(user, project, Permission.CREATE)
         parent_id = find_task(a.project, parent).id if parent else None
-        data = dict(title=title, description=description, stage=stage, priority=priority, parent_id=parent_id, assignee_id=user_by_email(a.project, assignee_email),
+        data = dict(title=title, description=description, stage=stage, priority=priority, version=version, parent_id=parent_id, assignee_id=user_by_email(a.project, assignee_email),
                     start_date=start_date, due_date=due_date, tags=tags or [], checklist=[{"text": c} for c in checklist or []])
         try:
             Task.model_validate(data | {"project_id": a.project.id, "number": 0, "created_by": user.id})
@@ -335,6 +344,8 @@ def build_mcp(settings: Settings, db: Database) -> MCPServer:
         description: str | None = None,
         stage: PipelineStage | None = None,
         priority: Priority | None = None,
+        version: str | None = None,
+        clear_version: bool = False,
         assignee_email: str | None = None,
         unassign: bool = False,
         start_date: date | None = None,
@@ -342,12 +353,16 @@ def build_mcp(settings: Settings, db: Database) -> MCPServer:
         tags: list[str] | None = None,
         check_items: list[str] | None = None,
     ) -> dict[str, Any]:
-        """일감 수정 (보낸 값만 바뀜). 단계 이동은 stage, 작업자 해제는 unassign=true, check_items 는 완료 처리할 할 일 문구."""
+        """일감 수정 (보낸 값만 바뀜). 단계 이동은 stage, 버전 지정은 version(해제는 clear_version=true), 작업자 해제는 unassign=true, check_items 는 완료 처리할 할 일 문구."""
         user = me(write=True)
         a = project_access(user, project, Permission.EDIT)
         before = find_task(a.project, task)
         changes: dict[str, Any] = {k: v for k, v in dict(title=title, description=description, stage=stage, priority=priority,
                                    start_date=start_date, due_date=due_date, tags=tags).items() if v is not None}
+        if clear_version:
+            changes["version"] = None
+        elif version is not None:
+            changes["version"] = version.strip() or None
         if unassign:
             changes["assignee_id"] = None
         elif assignee_email:

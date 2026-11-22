@@ -70,6 +70,8 @@ def search(db: Database, project: Project, query: str, limit: int = 30) -> list[
             score, body = 0.0, ""
             if q in t.title.casefold():
                 score += 10
+            if t.version and q in t.version.casefold():
+                score += 6
             if any(q in tag.casefold() for tag in t.tags):
                 score += 5
             parts = [t.description, *(i.text for i in t.checklist), *comments_by_task.get(t.id, [])]

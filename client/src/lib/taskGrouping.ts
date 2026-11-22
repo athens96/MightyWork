@@ -2,7 +2,7 @@ import type { Cycle, Milestone, PipelineStage, PipelineStageInfo, Priority, Task
 import { PRIORITY_LABEL, STAGE_TONE } from "../features/tasks/tones";
 
 export type DoneDisplayMode = "monthly" | "recent7" | "all" | "hide";
-export type GroupBy = "none" | "stage" | "priority" | "assignee" | "milestone" | "cycle";
+export type GroupBy = "none" | "stage" | "priority" | "version" | "assignee" | "milestone" | "cycle";
 export type StageGroupKey = "" | "in_progress" | "review_qa" | "done" | "todo_backlog";
 
 export interface MonthBucket {
@@ -70,12 +70,42 @@ export function matchesQuickQuery(task: Task, projectKey: string, query: string)
     `#${task.number}`,
     String(task.number),
     task.title,
+    task.version ?? "",
     ...task.tags.map((t) => `#${t}`),
     task.via_client ?? "",
   ]
     .join(" ")
     .toLowerCase();
   return terms.every((term) => haystack.includes(term));
+}
+
+function versionSortTuple(ver: string): [number, number, number, number, string] | null {
+  const cleaned = ver.trim().replace(/^v/i, "").split("-")[0];
+  const m = /^(\d+)\.(\d+|x|\*)(?:\.(\d+|x|\*))?$/i.exec(cleaned);
+  if (!m) return null;
+  const major = Number(m[1]);
+  const minor = /^\d+$/.test(m[2]) ? Number(m[2]) : Number.MAX_SAFE_INTEGER;
+  const patch = m[3] === undefined ? -1 : /^\d+$/.test(m[3]) ? Number(m[3]) : Number.MAX_SAFE_INTEGER;
+  const isWildcard = /x|\*/i.test(cleaned) ? 1 : 0;
+  return [major, minor, patch, isWildcard, ver];
+}
+
+/** 버전 문자열 목록을 최신 버전 순으로 자연 정렬 (예: v0.7.0 > v0.6.x > v0.6.0 > v0.5.10 > v0.5.9) */
+export function sortVersionLabels(versions: string[]): string[] {
+  return [...versions].sort((a, b) => {
+    const ta = versionSortTuple(a);
+    const tb = versionSortTuple(b);
+    if (ta && tb) {
+      if (ta[0] !== tb[0]) return tb[0] - ta[0];
+      if (ta[1] !== tb[1]) return tb[1] - ta[1];
+      if (ta[2] !== tb[2]) return tb[2] - ta[2];
+      if (ta[3] !== tb[3]) return tb[3] - ta[3];
+      return b.localeCompare(a, undefined, { numeric: true });
+    }
+    if (ta) return -1;
+    if (tb) return 1;
+    return b.localeCompare(a, undefined, { numeric: true });
+  });
 }
 
 function taskTimestamp(t: Task): number {
@@ -182,6 +212,30 @@ export function groupTasks(
         tone: p.tone,
         tasks: items,
       });
+    }
+    return groups;
+  }
+
+  if (groupBy === "version") {
+    const byVer = new Map<string, Task[]>();
+    const noVer: Task[] = [];
+    for (const t of tasks) {
+      if (!t.version) {
+        noVer.push(t);
+      } else {
+        const list = byVer.get(t.version) ?? [];
+        list.push(t);
+        byVer.set(t.version, list);
+      }
+    }
+    const groups: TaskGroup[] = sortVersionLabels([...byVer.keys()]).map((ver) => ({
+      key: ver,
+      label: ver,
+      tone: "tone-task",
+      tasks: byVer.get(ver)!,
+    }));
+    if (noVer.length > 0) {
+      groups.push({ key: "__none__", label: "버전 미지정", tone: "tone-stop", tasks: noVer });
     }
     return groups;
   }

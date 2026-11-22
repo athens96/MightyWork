@@ -37,6 +37,7 @@ from app.core.version import APP_VERSION
 from app.db import Database
 from app.mcp_server import build_mcp, transport_security
 from app.models.oauth import SCOPES
+from app.services.migrations import migrate_version_tags
 from app.services.oauth.server import Store, issuer, resource_url
 
 logger = logging.getLogger("mightywork")
@@ -48,6 +49,7 @@ def create_app(settings: Settings | None = None, db: Database | None = None) -> 
         logger.warning("JWT_SECRET is the default value. Set a strong secret in server/.env before deploying.")
     if db is None:
         db = Database.from_sqlite(settings.data_dir) if settings.db_backend == "sqlite" else Database.from_json_files(settings.data_dir)
+    migrate_version_tags(db)
 
     # MCP 서버 (Streamable HTTP /mcp) — session_manager 는 앱을 만든 뒤에 생기므로 여기서 먼저 만든다
     mcp = build_mcp(settings, db)

@@ -12,6 +12,7 @@ import {
   matchesQuickQuery,
   matchesStageGroup,
   partitionDoneByMonth,
+  sortVersionLabels,
   type DoneDisplayMode,
   type GroupBy,
   type StageGroupKey,
@@ -40,7 +41,7 @@ type ViewLayout = "board" | "list" | "timeline";
 type SortKey = "number" | "updated" | "priority" | "due";
 const PRIO_RANK: Record<Priority, number> = { urgent: 0, high: 1, medium: 2, low: 3 };
 const VALID_DONE_MODES: readonly DoneDisplayMode[] = ["monthly", "recent7", "hide", "all"];
-const VALID_GROUPS: readonly GroupBy[] = ["none", "stage", "priority", "assignee", "milestone", "cycle"];
+const VALID_GROUPS: readonly GroupBy[] = ["none", "stage", "priority", "version", "assignee", "milestone", "cycle"];
 const COL_PAGE_SIZE = 12;
 const DENSITY_KEY = "mw:board-density";
 
@@ -77,6 +78,7 @@ export function TaskBoardPage() {
   const [liveStatus, setLiveStatus] = useState<SSEStatus>("reconnecting");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [bulkTag, setBulkTag] = useState("");
+  const [bulkVersion, setBulkVersion] = useState("");
   const [bulkBusy, setBulkBusy] = useState(false);
 
   // MW-16: 대량 일감 정리 UI 상태
@@ -160,6 +162,7 @@ export function TaskBoardPage() {
   const dueFilter = params.get("due") || "";
   const cycleFilter = params.get("cycle") || "";
   const milestoneFilter = params.get("milestone") || "";
+  const versionFilter = params.get("ver") || "";
   const sort = (params.get("sort") as SortKey) || "number";
   const quickQuery = params.get("q") || "";
   const stageGroup = (params.get("sg") as StageGroupKey) || "";
@@ -291,6 +294,10 @@ export function TaskBoardPage() {
 
   const usersById = useMemo(() => new Map(users.map((u) => [u.id, u])), [users]);
   const allTags = useMemo(() => [...new Set(tasks.flatMap((t) => t.tags))].sort((a, b) => a.localeCompare(b)), [tasks]);
+  const allVersions = useMemo(
+    () => sortVersionLabels([...new Set(tasks.flatMap((t) => (t.version ? [t.version] : [])))]),
+    [tasks],
+  );
 
   const create = async (e: FormEvent) => {
     e.preventDefault();
@@ -323,6 +330,8 @@ export function TaskBoardPage() {
       if (cycleFilter && cycleFilter !== "none" && t.cycle_id !== cycleFilter) return false;
       if (milestoneFilter === "none" && t.milestone_id) return false;
       if (milestoneFilter && milestoneFilter !== "none" && t.milestone_id !== milestoneFilter) return false;
+      if (versionFilter === "none" && t.version) return false;
+      if (versionFilter && versionFilter !== "none" && t.version !== versionFilter) return false;
       if (quickQuery && !matchesQuickQuery(t, project.key, quickQuery)) return false;
       return true;
     });
@@ -337,7 +346,7 @@ export function TaskBoardPage() {
       }
       return a.number - b.number;
     });
-  }, [tasks, assignee, priority, tag, dueFilter, cycleFilter, milestoneFilter, quickQuery, project.key, sort, me?.id]);
+  }, [tasks, assignee, priority, tag, dueFilter, cycleFilter, milestoneFilter, versionFilter, quickQuery, project.key, sort, me?.id]);
 
   // 2단계 필터 (KPI 타일 단계 그룹 선택 적용)
   const visible = useMemo(
@@ -358,6 +367,7 @@ export function TaskBoardPage() {
   const hasFilters =
     assignee !== "all" ||
     advancedFilterCount > 0 ||
+    !!versionFilter ||
     !!quickQuery ||
     !!stageGroup ||
     doneMode !== "monthly" ||
@@ -425,6 +435,7 @@ export function TaskBoardPage() {
     if (dueFilter) filters.due = dueFilter;
     if (cycleFilter) filters.cycle = cycleFilter;
     if (milestoneFilter) filters.milestone = milestoneFilter;
+    if (versionFilter) filters.ver = versionFilter;
     if (sort !== "number") filters.sort = sort;
     if (quickQuery) filters.q = quickQuery;
     if (stageGroup) filters.sg = stageGroup;
@@ -478,6 +489,7 @@ export function TaskBoardPage() {
       }
       setSelectedIds(new Set());
       setBulkTag("");
+      setBulkVersion("");
     } finally {
       setBulkBusy(false);
     }
@@ -755,6 +767,24 @@ export function TaskBoardPage() {
           <option value="all">완료: 전체 펼침</option>
         </select>
 
+        {allVersions.length > 0 && (
+          <select
+            className="filter-select"
+            value={versionFilter}
+            onChange={(e) => setParam("ver", e.target.value)}
+            aria-label="버전 필터"
+            title="버전별 필터"
+          >
+            <option value="">모든 버전</option>
+            <option value="none">버전 미지정</option>
+            {allVersions.map((v) => (
+              <option key={v} value={v}>
+                {v}
+              </option>
+            ))}
+          </select>
+        )}
+
         {layout !== "timeline" && (
           <select
             className="filter-select"
@@ -765,6 +795,7 @@ export function TaskBoardPage() {
           >
             {layout === "list" && <option value="stage">그룹: 단계별</option>}
             <option value="none">{layout === "board" ? "스윔레인: 없음" : "그룹: 없음 (평면)"}</option>
+            {allVersions.length > 0 && <option value="version">그룹: 버전별</option>}
             <option value="priority">그룹: 우선순위별</option>
             <option value="assignee">그룹: 작업자별</option>
             {milestones.length > 0 && <option value="milestone">그룹: 마일스톤별</option>}
@@ -1055,6 +1086,31 @@ export function TaskBoardPage() {
               ))}
             </select>
           )}
+          <form
+            className="row"
+            style={{ gap: 4 }}
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (bulkVersion.trim()) runBulk({ version: bulkVersion.trim() });
+            }}
+          >
+            <input
+              className="bulk-tag-input mono"
+              list="mw-bulk-versions"
+              value={bulkVersion}
+              maxLength={40}
+              onChange={(e) => setBulkVersion(e.target.value)}
+              placeholder="버전 (v0.1.0)"
+              aria-label="일괄 버전 지정"
+            />
+            {allVersions.length > 0 && (
+              <datalist id="mw-bulk-versions">
+                {allVersions.map((v) => (
+                  <option key={v} value={v} />
+                ))}
+              </datalist>
+            )}
+          </form>
           <form
             className="row"
             style={{ gap: 4 }}

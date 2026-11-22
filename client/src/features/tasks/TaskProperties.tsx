@@ -1,4 +1,4 @@
-import { useState, type KeyboardEvent } from "react";
+import { useEffect, useState, type KeyboardEvent } from "react";
 import { Avatar } from "../../components/Avatar";
 import { CloseIcon, TrashIcon } from "../../components/icons";
 import { dueState, timeAgo } from "../../lib/time";
@@ -10,6 +10,7 @@ interface Props {
   stages: PipelineStageInfo[];
   cycles?: Cycle[];
   milestones?: Milestone[];
+  versions?: string[];
   users: User[]; // 보고자 등 표시용
   assignees: User[]; // 작업자 후보 (프로젝트 멤버)
   readOnly: boolean; // 편집 권한 없음
@@ -19,12 +20,22 @@ interface Props {
 }
 
 /** 오른쪽 속성 사이드바 — 설정 행 패턴(이름 왼쪽, 컨트롤 오른쪽), 바꾸면 즉시 저장 */
-export function TaskProperties({ task, stages, cycles = [], milestones = [], users, assignees, readOnly, canDelete, onPatch, onDelete }: Props) {
+export function TaskProperties({ task, stages, cycles = [], milestones = [], versions = [], users, assignees, readOnly, canDelete, onPatch, onDelete }: Props) {
+  const [version, setVersion] = useState(task.version ?? "");
   const [estimate, setEstimate] = useState(task.estimate?.toString() ?? "");
   const [tagDraft, setTagDraft] = useState("");
   const reporter = users.find((u) => u.id === task.created_by);
   const assignee = users.find((u) => u.id === task.assignee_id);
   const due = dueState(task.due_date, task.stage === "done");
+
+  useEffect(() => {
+    setVersion(task.version ?? "");
+  }, [task.version]);
+
+  const commitVersion = () => {
+    const value = version.trim() || null;
+    if (value !== task.version) onPatch({ version: value });
+  };
 
   const commitEstimate = () => {
     const value = estimate.trim() === "" ? null : Number(estimate);
@@ -111,6 +122,44 @@ export function TaskProperties({ task, stages, cycles = [], milestones = [], use
           </select>
         </div>
       )}
+
+      <div className="prop">
+        <span className="prop-name">버전</span>
+        <span className="prop-control with-suffix">
+          <input
+            className="mono"
+            list="mw-project-versions"
+            value={version}
+            maxLength={40}
+            placeholder="예: v0.1.0"
+            onChange={(e) => setVersion(e.target.value)}
+            onBlur={commitVersion}
+            onKeyDown={(e) => e.key === "Enter" && !e.nativeEvent.isComposing && (e.target as HTMLInputElement).blur()}
+            aria-label="버전"
+          />
+          {!readOnly && task.version && (
+            <button
+              type="button"
+              className="prop-version-clear"
+              onClick={() => {
+                setVersion("");
+                onPatch({ version: null });
+              }}
+              aria-label="버전 해제"
+              title="버전 해제"
+            >
+              <CloseIcon size={10} />
+            </button>
+          )}
+          {versions.length > 0 && (
+            <datalist id="mw-project-versions">
+              {versions.map((v) => (
+                <option key={v} value={v} />
+              ))}
+            </datalist>
+          )}
+        </span>
+      </div>
 
       <div className="prop">
         <span className="prop-name">시작일</span>
