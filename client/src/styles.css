@@ -2464,3 +2464,45 @@ button.tile.fill-run.is-active {
 .task-list-table tr.is-kbd-focus td {
   background: var(--accent-soft);
 }
+
+/* MW-30: 체크리스트 순서 이동 · 하위 일감 승격 */
+.checklist li.is-dragging {
+  opacity: 0.45;
+}
+.checklist li.is-drop-target {
+  outline: 1.5px dashed var(--accent);
+  background: var(--accent-soft);
+}
+.check-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity var(--quick) var(--ease);
+}
+.checklist li:hover .check-actions,
+.checklist li:focus-within .check-actions {
+  opacity: 1;
+}
+.check-mini-btn {
+  height: 20px;
+  padding: 0 5px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--card);
+  color: var(--ink2);
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 1;
+}
+.check-mini-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.check-mini-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.check-promote-btn {
+  white-space: nowrap;
+}

@@ -18,7 +18,7 @@ import { useAutoRefresh } from "../../lib/useAutoRefresh";
 import { useLinkResolver } from "../../lib/useLinkResolver";
 import { Markdown } from "../../components/Markdown";
 import { MarkdownToolbar } from "../../components/MarkdownToolbar";
-import type { Attachment, Comment, GitHubLink, Task, TaskActivity, TaskLink, TaskLinkKind, TaskUpdate, WikiPageSummary } from "../../types";
+import type { Attachment, ChecklistItem, Comment, GitHubLink, Task, TaskActivity, TaskLink, TaskLinkKind, TaskUpdate, WikiPageSummary } from "../../types";
 import { useProjects } from "../projects/ProjectsContext";
 import { useBoard } from "./boardContext";
 import { TaskChecklist } from "./TaskChecklist";
@@ -286,6 +286,30 @@ export function TaskDetailPanel() {
     setTask(updatedParent);
     onChanged(updatedParent);
     setNewSubTitle("");
+  };
+
+  const promoteChecklistItem = async (item: ChecklistItem, index: number) => {
+    if (!task || opsBusy) return;
+    setOpsBusy(true);
+    setError(null);
+    try {
+      const created = await tasksApi.create(project.id, {
+        title: item.text.slice(0, 200),
+        parent_id: task.id,
+        stage: item.done ? "done" : "todo",
+      });
+      setSubtasks((prev) => [...prev, created]);
+      onCreated(created);
+      const nextChecklist = task.checklist.filter((_, i) => i !== index);
+      const updated = await tasksApi.update(project.id, task.id, { checklist: nextChecklist });
+      setTask(updated);
+      onChanged(updated);
+      refreshActivity();
+    } catch (e) {
+      setError(e instanceof ApiError ? String(e.detail) : "하위 일감 승격에 실패했습니다.");
+    } finally {
+      setOpsBusy(false);
+    }
   };
 
   const addTaskLink = async (e: FormEvent) => {
@@ -639,7 +663,12 @@ export function TaskDetailPanel() {
                 )}
               </section>
 
-              <TaskChecklist items={task.checklist} readOnly={!editable} onChange={(checklist) => patch({ checklist })} />
+              <TaskChecklist
+                items={task.checklist}
+                readOnly={!editable}
+                onChange={(checklist) => patch({ checklist })}
+                onPromote={can("create") && editable ? promoteChecklistItem : undefined}
+              />
 
               {/* 하위 일감 */}
               <section className="detail-section">
