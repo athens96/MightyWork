@@ -13,6 +13,7 @@ interface Props {
   assignee: User | undefined;
   stages: PipelineStageInfo[];
   selected: boolean;
+  focused?: boolean;
   compact?: boolean;
   checked?: boolean;
   onToggleCheck?: (taskId: string) => void;
@@ -44,6 +45,7 @@ export function TaskCard({
   assignee,
   stages,
   selected,
+  focused = false,
   compact = false,
   checked,
   onToggleCheck,
@@ -65,7 +67,8 @@ export function TaskCard({
 
   return (
     <article
-      className={`task-card ${STAGE_TONE[task.stage]} ${prioClass} ${due === "overdue" ? "is-overdue" : ""} ${running ? "is-running" : ""} ${compact ? "is-compact" : ""} ${selected ? "selected" : ""} ${checked ? "is-checked" : ""} ${dragging ? "is-dragging" : ""}`}
+      data-task-id={task.id}
+      className={`task-card ${STAGE_TONE[task.stage]} ${prioClass} ${due === "overdue" ? "is-overdue" : ""} ${running ? "is-running" : ""} ${compact ? "is-compact" : ""} ${selected ? "selected" : ""} ${focused ? "is-kbd-focus" : ""} ${checked ? "is-checked" : ""} ${dragging ? "is-dragging" : ""}`}
       role="button"
       tabIndex={0}
       draggable={draggable}

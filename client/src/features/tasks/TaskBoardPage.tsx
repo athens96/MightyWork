@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type DragEvent, type FormEvent } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type FormEvent } from "react";
 import { Link, Outlet, useMatch, useNavigate, useSearchParams } from "react-router-dom";
 import { cyclesApi, membersApi, milestonesApi, pipelineApi, tasksApi, triageApi, usersApi, viewsApi } from "../../api";
 import { can as canDo } from "../../lib/permissions";
@@ -94,6 +94,8 @@ export function TaskBoardPage() {
   const [expandedLongCols, setExpandedLongCols] = useState<Set<string>>(() => new Set());
   const [collapsedLanes, setCollapsedLanes] = useState<Set<string>>(() => new Set());
   const [moreFiltersOpen, setMoreFiltersOpen] = useState(false);
+  const [focusedTaskId, setFocusedTaskId] = useState<string | null>(null);
+  const quickSearchRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setCollapsedCols(loadCollapsedCols(project.id));
@@ -480,6 +482,78 @@ export function TaskBoardPage() {
     setSelectedIds(checked ? new Set(visibleIds) : new Set());
   }, []);
 
+  // MW-28: 보드·리스트 키보드 내비게이션 (/ 검색 포커스, J/K 이동, Enter 열기, X 일괄 선택)
+  const navigableTaskIds = useMemo(() => {
+    if (layout === "timeline") return [] as string[];
+    if (layout === "list") {
+      return doneMode === "hide" && stageGroup !== "done"
+        ? visible.filter((t) => t.stage !== "done").map((t) => t.id)
+        : visible.map((t) => t.id);
+    }
+    const ids: string[] = [];
+    for (const stage of boardStages) {
+      if (collapsedCols.has(stage.key)) continue;
+      const col = visible.filter((t) => t.stage === stage.key);
+      const shown = stage.key === "done" ? partitionDoneByMonth(col, doneMode).expanded : col;
+      for (const t of shown) ids.push(t.id);
+    }
+    return ids;
+  }, [layout, visible, boardStages, collapsedCols, doneMode, stageGroup]);
+
+  useEffect(() => {
+    if (openTaskId || layout === "timeline") return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const target = e.target as HTMLElement | null;
+      const typing = Boolean(target?.closest("input, textarea, select, [contenteditable='true']"));
+      if (typing) {
+        if (e.key === "Escape" && target === quickSearchRef.current) {
+          quickSearchRef.current?.blur();
+        }
+        return;
+      }
+      if (e.key === "/") {
+        e.preventDefault();
+        quickSearchRef.current?.focus();
+        quickSearchRef.current?.select();
+        return;
+      }
+      if (navigableTaskIds.length === 0) return;
+      const k = e.key.toLowerCase();
+      if (k === "j" || e.key === "ArrowDown") {
+        e.preventDefault();
+        setFocusedTaskId((cur) => {
+          const idx = cur ? navigableTaskIds.indexOf(cur) : -1;
+          const nextId = navigableTaskIds[(idx + 1) % navigableTaskIds.length];
+          requestAnimationFrame(() =>
+            document.querySelector(`[data-task-id="${nextId}"]`)?.scrollIntoView({ block: "nearest", behavior: "smooth" }),
+          );
+          return nextId;
+        });
+      } else if (k === "k" || e.key === "ArrowUp") {
+        e.preventDefault();
+        setFocusedTaskId((cur) => {
+          const idx = cur ? navigableTaskIds.indexOf(cur) : 0;
+          const nextId = navigableTaskIds[(idx - 1 + navigableTaskIds.length) % navigableTaskIds.length];
+          requestAnimationFrame(() =>
+            document.querySelector(`[data-task-id="${nextId}"]`)?.scrollIntoView({ block: "nearest", behavior: "smooth" }),
+          );
+          return nextId;
+        });
+      } else if (e.key === "Enter" && focusedTaskId && navigableTaskIds.includes(focusedTaskId)) {
+        e.preventDefault();
+        navigate(`/projects/${project.id}/tasks/${focusedTaskId}`);
+      } else if (k === "x" && canEdit && focusedTaskId && navigableTaskIds.includes(focusedTaskId)) {
+        e.preventDefault();
+        toggleSelect(focusedTaskId);
+      } else if (e.key === "Escape" && focusedTaskId) {
+        setFocusedTaskId(null);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [openTaskId, layout, navigableTaskIds, focusedTaskId, canEdit, navigate, project.id, toggleSelect]);
+
   const runBulk = async (patch: Omit<TaskBulkRequest, "task_ids">) => {
     const ids = [...selectedIds];
     if (ids.length === 0 || bulkBusy) return;
@@ -511,6 +585,7 @@ export function TaskBoardPage() {
       assignee={task.assignee_id ? usersById.get(task.assignee_id) : undefined}
       stages={stages}
       selected={task.id === openTaskId}
+      focused={task.id === focusedTaskId}
       compact={compact}
       checked={selectedIds.has(task.id)}
       onToggleCheck={canEdit ? toggleSelect : undefined}
@@ -750,9 +825,10 @@ export function TaskBoardPage() {
         <label className="quick-filter" aria-label="보드 내 빠른 검색">
           <SearchIcon size={12} />
           <input
+            ref={quickSearchRef}
             value={quickQuery}
             onChange={(e) => setParam("q", e.target.value)}
-            placeholder="키·제목·#레이블 즉시 필터"
+            placeholder="키·제목·#레이블 필터 (/)"
           />
           {quickQuery && (
             <button type="button" className="icon-btn" onClick={() => setParam("q", "")} aria-label="검색어 지우기">
@@ -1007,6 +1083,7 @@ export function TaskBoardPage() {
           doneMode={doneMode}
           compact={compact}
           canEdit={canEdit}
+          focusedTaskId={focusedTaskId}
           selectedIds={selectedIds}
           onToggleSelect={toggleSelect}
           onToggleAll={toggleAllVisible}

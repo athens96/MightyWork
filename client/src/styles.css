@@ -2455,3 +2455,12 @@ button.tile.fill-run.is-active {
   background: var(--wait-soft);
   color: var(--wait-text);
 }
+
+/* MW-28: 보드·리스트 키보드 포커스 강조 */
+.task-card.is-kbd-focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.task-list-table tr.is-kbd-focus td {
+  background: var(--accent-soft);
+}

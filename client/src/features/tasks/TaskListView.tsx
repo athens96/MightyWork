@@ -21,6 +21,7 @@ interface Props {
   doneMode?: DoneDisplayMode;
   compact?: boolean;
   canEdit: boolean;
+  focusedTaskId?: string | null;
   selectedIds?: Set<string>;
   onToggleSelect?: (taskId: string) => void;
   onToggleAll?: (checked: boolean, visibleIds: string[]) => void;
@@ -40,6 +41,7 @@ export function TaskListView({
   doneMode = "monthly",
   compact = false,
   canEdit,
+  focusedTaskId,
   selectedIds,
   onToggleSelect,
   onToggleAll,
@@ -137,7 +139,11 @@ export function TaskListView({
     const isChecked = selectable && selectedIds.has(t.id);
     const prioClass = t.priority === "urgent" ? "prio-urgent" : t.priority === "high" ? "prio-high" : "";
     return (
-      <tr key={t.id} className={`${isChecked ? "is-checked" : ""} ${prioClass} ${due === "overdue" ? "is-overdue" : ""}`}>
+      <tr
+        key={t.id}
+        data-task-id={t.id}
+        className={`${isChecked ? "is-checked" : ""} ${focusedTaskId === t.id ? "is-kbd-focus" : ""} ${prioClass} ${due === "overdue" ? "is-overdue" : ""}`}
+      >
         {selectable && (
           <td className="nowrap">
             <input
