@@ -2,6 +2,7 @@ import { lazy, Suspense } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { RequireAuth } from "./auth/RequireAuth";
 import { Layout } from "./components/Layout";
+import { VersionUpdatePrompt } from "./components/VersionUpdatePrompt";
 import { LoginPage } from "./pages/LoginPage";
 import { ConsentPage } from "./features/oauth/ConsentPage";
 import { ConnectedAppsPage } from "./features/oauth/ConnectedAppsPage";
@@ -32,7 +33,8 @@ const knowledgeElement = (
 
 export default function App() {
   return (
-    <Routes>
+    <>
+      <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route element={<RequireAuth />}>
         {/* OAuth 동의 화면 — 사이드바 없이 단독 (로그인 필요) */}
@@ -65,6 +67,8 @@ export default function App() {
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+      </Routes>
+      <VersionUpdatePrompt />
+    </>
   );
 }

@@ -5,6 +5,7 @@ import { useAuth } from "../auth/AuthContext";
 import { useProjects } from "../features/projects/ProjectsContext";
 import { subscribeSSE } from "../lib/sse";
 import { APP_VERSION } from "../lib/version";
+import { OPEN_VERSION_MODAL_EVENT, VERSION_AVAILABLE_EVENT } from "../lib/versionCheck";
 import { useTheme } from "../theme";
 import { CommandPalette } from "./CommandPalette";
 import { QuickCreateModal, ShortcutsModal } from "./QuickCreateModal";
@@ -23,6 +24,7 @@ export function Layout() {
   const [quickOpen, setQuickOpen] = useState(false);
   const [keysOpen, setKeysOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [newVersion, setNewVersion] = useState<string | null>(null);
   const location = useLocation();
   const activeProjectId = useMatch("/projects/:projectId/*")?.params.projectId;
   const activeProject = projects.find((p) => p.id === activeProjectId);
@@ -51,6 +53,15 @@ export function Layout() {
       stopSSE();
     };
   }, [user?.id]);
+
+  useEffect(() => {
+    const onVer = (e: Event) => {
+      const ver = (e as CustomEvent<{ version: string }>).detail?.version;
+      if (ver) setNewVersion(ver);
+    };
+    window.addEventListener(VERSION_AVAILABLE_EVENT, onVer);
+    return () => window.removeEventListener(VERSION_AVAILABLE_EVENT, onVer);
+  }, []);
 
   useEffect(() => {
     const onOpenCmd = () => setCmdOpen(true);
@@ -120,6 +131,16 @@ export function Layout() {
             MightyWork
             <span className="brand-ver">v{APP_VERSION}</span>
           </Link>
+          {newVersion && (
+            <button
+              type="button"
+              className="brand-ver-update"
+              onClick={() => window.dispatchEvent(new Event(OPEN_VERSION_MODAL_EVENT))}
+              title={`새 버전 v${newVersion} 출시 — 클릭하여 새로고침 안내 열기`}
+            >
+              v{newVersion} ↑
+            </button>
+          )}
           <button type="button" className="icon-btn mobile-close-btn" onClick={() => setDrawerOpen(false)} aria-label="메뉴 닫기">
             <CloseIcon size={15} />
           </button>

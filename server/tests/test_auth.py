@@ -11,6 +11,13 @@ def test_health(client):
     assert client.get("/api/health").json() == {"status": "ok", "version": APP_VERSION}
 
 
+def test_version_endpoint_no_store(client):
+    res = client.get("/api/version")
+    assert res.status_code == 200
+    assert res.json()["version"] == APP_VERSION
+    assert res.headers.get("cache-control") == "no-store"
+
+
 def test_requires_auth(client):
     assert client.get("/api/projects").status_code == 401
     assert client.get("/api/projects/x/tasks").status_code == 401

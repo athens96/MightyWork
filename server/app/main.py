@@ -87,8 +87,11 @@ def create_app(settings: Settings | None = None, db: Database | None = None) -> 
         return {"status": "ok", "version": APP_VERSION}
 
     @api.get("/version", tags=["system"])
-    def app_version() -> dict[str, str]:
-        return {"name": settings.app_name, "version": APP_VERSION}
+    def app_version() -> JSONResponse:
+        return JSONResponse(
+            {"name": settings.app_name, "version": APP_VERSION},
+            headers={"Cache-Control": "no-store"},
+        )
 
     @api.get("/mcp-info", tags=["system"])
     def mcp_info() -> dict[str, object]:
