@@ -16,6 +16,7 @@ import { ChevronIcon, EditIcon, HistoryIcon, PaperclipIcon, PlusIcon, StarIcon, 
 import { Markdown, TableOfContents } from "../../components/Markdown";
 import { MarkdownToolbar } from "../../components/MarkdownToolbar";
 import { extractHeadings } from "../../lib/markdownHelpers";
+import { clearDraft, loadDraft, saveDraft, useBeforeUnloadWarning, type SavedDraft } from "../../lib/draftStorage";
 import { can } from "../../lib/permissions";
 import { recordRecent, removeBookmark, togglePin, useNavBookmarks } from "../../lib/recentsAndPins";
 import { PROJECT_EVENT, type ProjectEventDetail } from "../../lib/sse";
@@ -42,6 +43,7 @@ export function WikiPage() {
   const [page, setPage] = useState<WikiPageType | null>(null);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<Draft>(toDraft(null));
+  const [pendingDraft, setPendingDraft] = useState<SavedDraft<Draft> | null>(null);
   const [conflict, setConflict] = useState<WikiPageType | null>(null);
   const [comments, setComments] = useState<WikiComment[]>([]);
   const [members, setMembers] = useState<User[]>([]);
@@ -229,11 +231,72 @@ export function WikiPage() {
     return chain;
   };
 
+  const draftKey = page ? `wiki:${project.id}:${page.id}` : null;
+  const isDraftDirty = Boolean(
+    editing &&
+      page &&
+      (draft.title !== page.title ||
+        draft.content !== page.content ||
+        draft.parent_id !== page.parent_id ||
+        draft.page_type !== page.page_type ||
+        draft.status !== page.status ||
+        draft.owner_id !== page.owner_id ||
+        JSON.stringify(draft.aliases) !== JSON.stringify(page.aliases) ||
+        JSON.stringify(draft.tags) !== JSON.stringify(page.tags)),
+  );
+  useBeforeUnloadWarning(isDraftDirty);
+
+  // 편집 중 자동 임시저장 (500ms 디바운스)
+  useEffect(() => {
+    if (!editing || !page || !draftKey) return;
+    if (!isDraftDirty) {
+      clearDraft(draftKey);
+      return;
+    }
+    const id = window.setTimeout(() => saveDraft(draftKey, draft, page.updated_at), 500);
+    return () => window.clearTimeout(id);
+  }, [editing, page, draftKey, draft, isDraftDirty]);
+
+  // 페이지 로드 시 저장되지 않은 로컬 초안 확인
+  useEffect(() => {
+    if (!page || !draftKey || !canEdit) {
+      setPendingDraft(null);
+      return;
+    }
+    const saved = loadDraft<Draft>(draftKey);
+    if (saved && (saved.data.title !== page.title || saved.data.content !== page.content)) {
+      setPendingDraft(saved);
+    } else {
+      setPendingDraft(null);
+    }
+  }, [page?.id, page?.updated_at, draftKey, canEdit]);
+
   const startEdit = () => {
     if (!page) return;
     setDraft(toDraft(page));
     setConflict(null);
     setEditing(true);
+  };
+
+  const restorePendingDraft = () => {
+    if (!page || !pendingDraft) return;
+    setDraft({ ...toDraft(page), ...pendingDraft.data });
+    setPendingDraft(null);
+    setConflict(null);
+    setEditing(true);
+  };
+
+  const discardPendingDraft = () => {
+    if (draftKey) clearDraft(draftKey);
+    setPendingDraft(null);
+  };
+
+  const cancelEdit = () => {
+    if (isDraftDirty && !confirm("저장하지 않은 변경사항을 버릴까요?")) return;
+    if (draftKey) clearDraft(draftKey);
+    setPendingDraft(null);
+    setConflict(null);
+    setEditing(false);
   };
 
   const save = async (force = false) => {
@@ -242,6 +305,8 @@ export function WikiPage() {
     try {
       const payload = force ? draft : { ...draft, expected_updated_at: page.updated_at };
       const updated = await wikiApi.update(project.id, page.id, payload);
+      if (draftKey) clearDraft(draftKey);
+      setPendingDraft(null);
       setPage(updated);
       setEditing(false);
       reloadTree();
@@ -466,6 +531,21 @@ export function WikiPage() {
                 )}
               </p>
               <PropertiesBar page={page} users={members} basePath={basePath} />
+              {pendingDraft && canEdit && (
+                <div className="task-banner draft-banner" role="status">
+                  <span className="task-banner-text">
+                    저장하지 않은 임시 초안이 있습니다 ({timeAgo(new Date(pendingDraft.savedAt).toISOString())}).
+                  </span>
+                  <div className="wiki-conflict-actions">
+                    <button type="button" className="btn btn-sm btn-primary" onClick={restorePendingDraft}>
+                      임시 초안 복원
+                    </button>
+                    <button type="button" className="btn btn-sm btn-ghost" onClick={discardPendingDraft}>
+                      버리기
+                    </button>
+                  </div>
+                </div>
+              )}
               {createdNotice && (
                 <div className="wiki-toast">
                   <span>
@@ -774,7 +854,7 @@ export function WikiPage() {
                   />
                 </>
               )}
-              <button className="btn btn-ghost" onClick={() => { setConflict(null); setEditing(false); }}>
+              <button className="btn btn-ghost" onClick={cancelEdit}>
                 취소
               </button>
               <button className="btn btn-primary" onClick={() => save()}>

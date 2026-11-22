@@ -7,11 +7,13 @@ import { EditorSuggestBar, useEditorSuggest } from "../../components/EditorSugge
 import { CloseIcon, DocIcon, EditIcon, LinkIcon, PaperclipIcon, StarIcon } from "../../components/icons";
 import { RefreshButton } from "../../components/RefreshButton";
 import { makeBranchName } from "../../lib/branchName";
+import { clearDraft, loadDraft, saveDraft, useBeforeUnloadWarning, type SavedDraft } from "../../lib/draftStorage";
 import { extractImageFile, insertUploadedImage } from "../../lib/editorUpload";
 import { can as canProject } from "../../lib/permissions";
 import { recordRecent, removeBookmark, togglePin, useNavBookmarks } from "../../lib/recentsAndPins";
 import { PROJECT_EVENT, type ProjectEventDetail } from "../../lib/sse";
 import { sortVersionLabels } from "../../lib/taskGrouping";
+import { timeAgo } from "../../lib/time";
 import { useAutoRefresh } from "../../lib/useAutoRefresh";
 import { useLinkResolver } from "../../lib/useLinkResolver";
 import { Markdown } from "../../components/Markdown";
@@ -49,6 +51,7 @@ export function TaskDetailPanel() {
   const [error, setError] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [desc, setDesc] = useState<string | null>(null); // null = 보기 모드
+  const [pendingDescDraft, setPendingDescDraft] = useState<SavedDraft<string> | null>(null);
   const [descCursor, setDescCursor] = useState(0);
   const [newSubTitle, setNewSubTitle] = useState("");
   const [linkKind, setLinkKind] = useState<TaskLinkKind>("relates_to");
@@ -310,9 +313,45 @@ export function TaskDetailPanel() {
     else if (task) setTitle(task.title);
   };
 
+  const descDraftKey = task ? `task-desc:${project.id}:${task.id}` : null;
+  const isDescDirty = Boolean(task && desc !== null && desc !== task.description);
+  useBeforeUnloadWarning(isDescDirty);
+
+  useEffect(() => {
+    if (!task || !descDraftKey || desc === null) return;
+    if (desc === task.description) {
+      clearDraft(descDraftKey);
+      return;
+    }
+    const id = window.setTimeout(() => saveDraft(descDraftKey, desc, task.updated_at), 500);
+    return () => window.clearTimeout(id);
+  }, [task, descDraftKey, desc]);
+
+  useEffect(() => {
+    if (!task || !descDraftKey || !editable) {
+      setPendingDescDraft(null);
+      return;
+    }
+    const saved = loadDraft<string>(descDraftKey);
+    if (saved && saved.data !== task.description) {
+      setPendingDescDraft(saved);
+    } else {
+      setPendingDescDraft(null);
+    }
+  }, [task?.id, task?.description, descDraftKey, editable]);
+
   const saveDesc = async () => {
     if (desc === null) return;
     await patch({ description: desc });
+    if (descDraftKey) clearDraft(descDraftKey);
+    setPendingDescDraft(null);
+    setDesc(null);
+  };
+
+  const cancelDesc = () => {
+    if (isDescDirty && !confirm("저장하지 않은 설명 변경사항을 버릴까요?")) return;
+    if (descDraftKey) clearDraft(descDraftKey);
+    setPendingDescDraft(null);
     setDesc(null);
   };
 
@@ -486,6 +525,35 @@ export function TaskDetailPanel() {
                     </button>
                   )}
                 </header>
+                {pendingDescDraft && desc === null && editable && (
+                  <div className="task-banner draft-banner" role="status">
+                    <span className="task-banner-text">
+                      저장하지 않은 설명 초안이 있습니다 ({timeAgo(new Date(pendingDescDraft.savedAt).toISOString())}).
+                    </span>
+                    <div className="wiki-conflict-actions">
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-primary"
+                        onClick={() => {
+                          setDesc(pendingDescDraft.data);
+                          setPendingDescDraft(null);
+                        }}
+                      >
+                        초안 복원
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-ghost"
+                        onClick={() => {
+                          if (descDraftKey) clearDraft(descDraftKey);
+                          setPendingDescDraft(null);
+                        }}
+                      >
+                        버리기
+                      </button>
+                    </div>
+                  </div>
+                )}
                 {desc === null ? (
                   task.description ? (
                     <Markdown links={resolver}>{task.description}</Markdown>
@@ -560,7 +628,7 @@ export function TaskDetailPanel() {
                       <span className="editor-hint">
                         <code>[[위키 제목]]</code> <code>@멘션</code> <code>{project.key}-12</code> · 저장 ⌘S
                       </span>
-                      <button className="btn btn-ghost" onClick={() => setDesc(null)}>
+                      <button className="btn btn-ghost" onClick={cancelDesc}>
                         취소
                       </button>
                       <button className="btn btn-primary" onClick={saveDesc}>

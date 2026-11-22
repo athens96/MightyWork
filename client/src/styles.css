@@ -2448,3 +2448,10 @@ button.tile.fill-run.is-active {
   background: var(--done-soft);
   color: var(--done-text);
 }
+.draft-banner {
+  padding: 8px 12px;
+  border-radius: var(--r-entry);
+  border: 1px solid color-mix(in srgb, var(--wait) 38%, var(--line));
+  background: var(--wait-soft);
+  color: var(--wait-text);
+}
