@@ -1,7 +1,9 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type FormEvent } from "react";
 import { Link, Outlet, useMatch, useNavigate, useSearchParams } from "react-router-dom";
 import { cyclesApi, membersApi, milestonesApi, pipelineApi, tasksApi, triageApi, usersApi, viewsApi } from "../../api";
+import { saveBlob } from "../../api/http";
 import { can as canDo } from "../../lib/permissions";
+import { tasksToCsv, tasksToMarkdownTable } from "../../lib/taskExport";
 import { useAuth } from "../../auth/AuthContext";
 import { ChevronIcon, CloseIcon, PlusIcon, SearchIcon } from "../../components/icons";
 import { TASK_CREATED_EVENT } from "../../components/QuickCreateModal";
@@ -18,7 +20,7 @@ import {
   type StageGroupKey,
 } from "../../lib/taskGrouping";
 import { useAutoRefresh } from "../../lib/useAutoRefresh";
-import { dueState } from "../../lib/time";
+import { dueState, todayYmd } from "../../lib/time";
 import type { Cycle, Milestone, Permission, PipelineStage, PipelineStageInfo, Priority, SavedView, Task, TaskBulkRequest, TaskUpdate, User } from "../../types";
 import { useCurrentProject } from "../projects/ProjectLayout";
 import type { BoardContext } from "./boardContext";
@@ -94,6 +96,8 @@ export function TaskBoardPage() {
   const [expandedLongCols, setExpandedLongCols] = useState<Set<string>>(() => new Set());
   const [collapsedLanes, setCollapsedLanes] = useState<Set<string>>(() => new Set());
   const [moreFiltersOpen, setMoreFiltersOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportCopied, setExportCopied] = useState(false);
   const [focusedTaskId, setFocusedTaskId] = useState<string | null>(null);
   const quickSearchRef = useRef<HTMLInputElement>(null);
 
@@ -916,6 +920,48 @@ export function TaskBoardPage() {
           <button type="button" className="btn btn-sm" onClick={saveCurrentView}>
             + 뷰 저장
           </button>
+        )}
+        {visible.length > 0 && (
+          <div className="menu-anchor">
+            <button
+              type="button"
+              className="btn btn-sm"
+              onClick={() => setExportOpen((o) => !o)}
+              title="현재 필터된 일감 내보내기"
+            >
+              {exportCopied ? "표 복사됨 ✓" : "내보내기"}
+            </button>
+            {exportOpen && (
+              <div className="popover move-project-menu">
+                <button
+                  type="button"
+                  className="menu-item"
+                  onClick={() => {
+                    const csv = tasksToCsv(visible, { projectKey: project.key, stages: visibleStages, usersById });
+                    saveBlob(new Blob([csv], { type: "text/csv;charset=utf-8" }), `${project.key}-tasks-${todayYmd()}.csv`);
+                    setExportOpen(false);
+                  }}
+                >
+                  <span>CSV 다운로드</span>
+                  <span className="muted">Excel 호환 ({visible.length}건)</span>
+                </button>
+                <button
+                  type="button"
+                  className="menu-item"
+                  onClick={async () => {
+                    const md = tasksToMarkdownTable(visible, { projectKey: project.key, stages: visibleStages, usersById });
+                    await navigator.clipboard?.writeText(md);
+                    setExportOpen(false);
+                    setExportCopied(true);
+                    window.setTimeout(() => setExportCopied(false), 1800);
+                  }}
+                >
+                  <span>Markdown 표 복사</span>
+                  <span className="muted">클립보드</span>
+                </button>
+              </div>
+            )}
+          </div>
         )}
       </div>
 

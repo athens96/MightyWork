@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { pipelineApi, tasksApi } from "../../api";
 import { RefreshButton } from "../../components/RefreshButton";
 import { can } from "../../lib/permissions";
+import { buildWeeklyStandupMarkdown } from "../../lib/taskExport";
 import { dueState, formatDate } from "../../lib/time";
 import { useAutoRefresh } from "../../lib/useAutoRefresh";
 import type { MyTask, PipelineStage, PipelineStageInfo } from "../../types";
@@ -21,6 +22,7 @@ export function MyTasksPage() {
   const [includeDone, setIncludeDone] = useState(false);
   const [projectFilter, setProjectFilter] = useState("");
   const [loading, setLoading] = useState(true);
+  const [reportCopied, setReportCopied] = useState(false);
 
   const reload = useCallback(
     async (showLoader = false) => {
@@ -62,6 +64,15 @@ export function MyTasksPage() {
     }
   };
 
+  const copyWeeklyReport = async () => {
+    const source = includeDone ? tasks : await tasksApi.my({ scope, include_done: true }).catch(() => tasks);
+    const filtered = projectFilter ? source.filter((t) => t.project_id === projectFilter) : source;
+    const md = buildWeeklyStandupMarkdown(filtered);
+    await navigator.clipboard?.writeText(md);
+    setReportCopied(true);
+    window.setTimeout(() => setReportCopied(false), 1800);
+  };
+
   return (
     <div>
       <header className="page-head">
@@ -72,6 +83,14 @@ export function MyTasksPage() {
           </p>
         </div>
         <div className="row-actions">
+          <button
+            type="button"
+            className="btn btn-sm"
+            onClick={copyWeeklyReport}
+            title="최근 7일 완료 · 진행 중 · 예정 일감을 Markdown 보고서로 복사"
+          >
+            {reportCopied ? "주간 보고서 복사됨 ✓" : "주간 보고서 복사"}
+          </button>
           <RefreshButton refreshing={refreshing} lastUpdated={lastUpdated} onClick={refresh} shortcut />
         </div>
       </header>
