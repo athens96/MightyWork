@@ -11,6 +11,7 @@ from app.models.member import Permission
 from app.models.project import Project
 from app.models.task import (
     PIPELINE_LABELS,
+    ChecklistItem,
     PipelineStage,
     PipelineStageInfo,
     Priority,
@@ -26,7 +27,7 @@ from app.models.task import (
     TaskUpdate,
     default_pipeline_stages,
 )
-from app.services.access import accessible_projects, is_member_user
+from app.services.access import accessible_projects, is_member_user, resolve_access
 from app.services.audit import record_audit
 from app.services.events import publish_event
 from app.services.links import link_targets, norm_title, pages_by_title, project_pages
@@ -74,6 +75,10 @@ class TaskBulkRequest(BaseModel):
 class TaskBulkResult(BaseModel):
     affected: int
     tasks: list[TaskRead] = []
+
+
+class TaskMoveRequest(BaseModel):
+    target_project_id: str
 
 
 _PRIO_ORDER = {Priority.URGENT: 0, Priority.HIGH: 1, Priority.MEDIUM: 2, Priority.LOW: 3}
@@ -185,6 +190,12 @@ def list_my_tasks(
     comment_counts: dict[str, int] = {}
     for c in db.comments.list(lambda c: c.project_id in projects_by_id):
         comment_counts[c.task_id] = comment_counts.get(c.task_id, 0) + 1
+    tasks_by_id = {t.id: t for t in all_tasks}
+    blocked_counts: dict[str, int] = {}
+    for l in db.task_links.list(lambda l: l.project_id in projects_by_id and l.kind == TaskLinkKind.BLOCKS):
+        src = tasks_by_id.get(l.source_id)
+        if src is not None and src.stage != PipelineStage.DONE:
+            blocked_counts[l.target_id] = blocked_counts.get(l.target_id, 0) + 1
 
     picked: list[MyTaskRead] = []
     for t in all_tasks:
@@ -201,7 +212,7 @@ def list_my_tasks(
         if due_soon and (t.due_date is None or t.due_date > cutoff or t.stage == PipelineStage.DONE):
             continue
         p = projects_by_id[t.project_id]
-        base = _read(db, t, comment_counts.get(t.id, 0), tuple(sub_counts.get(t.id, (0, 0))))
+        base = _read(db, t, comment_counts.get(t.id, 0), tuple(sub_counts.get(t.id, (0, 0))), blocked_counts.get(t.id, 0))
         picked.append(MyTaskRead(**base.model_dump(), project_key=p.key, project_name=p.name))
 
     return sorted(
@@ -254,13 +265,25 @@ def _read(
     task: Task,
     comment_count: int | None = None,
     subtask_stats: tuple[int, int] | None = None,
+    blocked_by_count: int | None = None,
 ) -> TaskRead:
     if comment_count is None:
         comment_count = len(db.comments.list(lambda c: c.task_id == task.id))
     if subtask_stats is None:
         subs = db.tasks.list(lambda t: t.parent_id == task.id)
         subtask_stats = (len(subs), sum(1 for s in subs if s.stage == PipelineStage.DONE))
-    return TaskRead(**task.model_dump(), comment_count=comment_count, subtask_count=subtask_stats[0], subtask_done=subtask_stats[1])
+    if blocked_by_count is None:
+        blockers = db.task_links.list(lambda l: l.target_id == task.id and l.kind == TaskLinkKind.BLOCKS)
+        blocked_by_count = sum(
+            1 for l in blockers if (src := db.tasks.get(l.source_id)) is not None and src.stage != PipelineStage.DONE
+        )
+    return TaskRead(
+        **task.model_dump(),
+        comment_count=comment_count,
+        subtask_count=subtask_stats[0],
+        subtask_done=subtask_stats[1],
+        blocked_by_count=blocked_by_count,
+    )
 
 
 @router.get("", response_model=list[TaskRead])
@@ -285,6 +308,12 @@ def list_tasks(
             pair[0] += 1
             if t.stage == PipelineStage.DONE:
                 pair[1] += 1
+    tasks_by_id = {t.id: t for t in all_project_tasks}
+    blocked_counts: dict[str, int] = {}
+    for l in db.task_links.list(lambda l: l.project_id == project.id and l.kind == TaskLinkKind.BLOCKS):
+        src = tasks_by_id.get(l.source_id)
+        if src is not None and src.stage != PipelineStage.DONE:
+            blocked_counts[l.target_id] = blocked_counts.get(l.target_id, 0) + 1
     ver_cf = version.strip().casefold() if version else None
     tasks = [
         t
@@ -300,7 +329,7 @@ def list_tasks(
     for c in db.comments.list(lambda c: c.project_id == project.id):
         counts[c.task_id] = counts.get(c.task_id, 0) + 1
     return [
-        _read(db, t, counts.get(t.id, 0), tuple(sub_counts.get(t.id, (0, 0))))
+        _read(db, t, counts.get(t.id, 0), tuple(sub_counts.get(t.id, (0, 0))), blocked_counts.get(t.id, 0))
         for t in sorted(tasks, key=lambda t: t.number)
     ]
 
@@ -353,7 +382,7 @@ def create_task(project: ProjectDep, body: TaskCreate, user: CurrentUser, settin
         link=f"{settings.app_url.rstrip('/')}{link}",
         extra={"task_id": task.id, "key": key, "stage": task.stage.value, "tags": task.tags},
     )
-    return _read(db, task, 0, (0, 0))
+    return _read(db, task, 0, (0, 0), 0)
 
 
 @router.post("/bulk", response_model=TaskBulkResult)
@@ -521,6 +550,118 @@ def delete_task(project: ProjectDep, task: TaskDep, user: CurrentUser, db: DbDep
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
+@router.post("/{task_id}/duplicate", response_model=TaskRead, status_code=status.HTTP_201_CREATED, dependencies=[require(Permission.CREATE)])
+def duplicate_task(project: ProjectDep, task: TaskDep, user: CurrentUser, db: DbDep) -> TaskRead:
+    """일감 복제 — 설명·속성·체크리스트(미완료 초기화)를 복제하여 새 일감 번호 발급."""
+    number = allocate_task_number(db, project.id)
+    suffix = " (복사)"
+    title = (task.title[: 200 - len(suffix)] + suffix) if len(task.title) + len(suffix) > 200 else f"{task.title}{suffix}"
+    copy_task = db.tasks.create(
+        Task(
+            project_id=project.id,
+            number=number,
+            title=title,
+            description=task.description,
+            stage=task.stage,
+            priority=task.priority,
+            parent_id=task.parent_id,
+            cycle_id=task.cycle_id,
+            milestone_id=task.milestone_id,
+            version=task.version,
+            assignee_id=task.assignee_id,
+            tags=list(task.tags),
+            start_date=task.start_date,
+            due_date=task.due_date,
+            estimate=task.estimate,
+            checklist=[ChecklistItem(text=i.text, done=False) for i in task.checklist],
+            created_by=user.id,
+        )
+    )
+    record_created(db, copy_task, user.id)
+    src_key = f"{project.key}-{task.number}"
+    dst_key = f"{project.key}-{copy_task.number}"
+    record_audit(
+        db,
+        project_id=project.id,
+        actor_id=user.id,
+        action="task.duplicated",
+        target_type="task",
+        target_id=copy_task.id,
+        summary=f"{src_key} → {dst_key} 복제",
+    )
+    publish_event(db, project.id, "task.created", {"task_id": copy_task.id, "stage": copy_task.stage.value})
+    return _read(db, copy_task, 0, (0, 0), 0)
+
+
+@router.post("/{task_id}/move", response_model=TaskRead, dependencies=[require(Permission.DELETE)])
+def move_task_to_project(
+    project: ProjectDep,
+    task: TaskDep,
+    body: TaskMoveRequest,
+    user: CurrentUser,
+    db: DbDep,
+) -> TaskRead:
+    """일감을 다른 프로젝트로 이동한다 (덧글·활동 이력·첨부 함께 이전, 프로젝트 종속 링크/사이클/마일스톤 정리)."""
+    if body.target_project_id == project.id:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Target project must be different")
+    target = db.projects.get(body.target_project_id)
+    target_access = resolve_access(db, target, user) if target else None
+    if target is None or target_access is None or not target_access.can(Permission.VIEW):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Target project not found")
+    if not target_access.can(Permission.CREATE):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "'create' permission required on target project")
+
+    old_key = f"{project.key}-{task.number}"
+    new_number = allocate_task_number(db, target.id)
+    keep_assignee = task.assignee_id if (task.assignee_id and is_member_user(db, target, task.assignee_id)) else None
+    moved = task.model_copy(
+        update={
+            "project_id": target.id,
+            "number": new_number,
+            "parent_id": None,
+            "cycle_id": None,
+            "milestone_id": None,
+            "assignee_id": keep_assignee,
+            "updated_at": utcnow(),
+        }
+    )
+    db.tasks.update(moved)
+
+    for c in db.comments.list(lambda x: x.task_id == task.id):
+        db.comments.update(c.model_copy(update={"project_id": target.id}))
+    for a in db.task_activities.list(lambda x: x.task_id == task.id):
+        db.task_activities.update(a.model_copy(update={"project_id": target.id}))
+    for att in db.attachments.list(lambda x: x.task_id == task.id):
+        db.attachments.update(att.model_copy(update={"project_id": target.id}))
+    for l in db.task_links.list(lambda x: x.source_id == task.id or x.target_id == task.id):
+        db.task_links.delete(l.id)
+    for child in db.tasks.list(lambda x: x.parent_id == task.id):
+        db.tasks.update(child.model_copy(update={"parent_id": None}))
+
+    new_key = f"{target.key}-{moved.number}"
+    record_audit(
+        db,
+        project_id=project.id,
+        actor_id=user.id,
+        action="task.moved_out",
+        target_type="task",
+        target_id=moved.id,
+        summary=f"{old_key} → {new_key} ({target.name}) 이동",
+    )
+    record_audit(
+        db,
+        project_id=target.id,
+        actor_id=user.id,
+        action="task.moved_in",
+        target_type="task",
+        target_id=moved.id,
+        summary=f"{old_key} ({project.name}) → {new_key} 이동됨",
+    )
+    publish_event(db, project.id, "task.deleted", {"task_id": moved.id})
+    publish_event(db, target.id, "task.created", {"task_id": moved.id, "stage": moved.stage.value})
+    return _read(db, moved)
+
+
 # ---------------------------------------------------------------- 하위 일감 · 일감 간 링크 · 위키 링크
 
 
@@ -561,6 +702,8 @@ def create_task_link(project: ProjectDep, task: TaskDep, body: TaskLinkCreate, u
     created = db.task_links.create(
         TaskLink(project_id=project.id, source_id=task.id, target_id=target.id, kind=body.kind, created_by=user.id)
     )
+    if body.kind == TaskLinkKind.BLOCKS:
+        publish_event(db, project.id, "task.updated", {"task_id": target.id})
     return TaskLinkRead(id=created.id, kind=created.kind.value, task_id=target.id, number=target.number, title=target.title, stage=target.stage)
 
 
@@ -570,6 +713,8 @@ def delete_task_link(project: ProjectDep, task: TaskDep, link_id: str, db: DbDep
     if link is None or link.project_id != project.id or task.id not in (link.source_id, link.target_id):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Task link not found")
     db.task_links.delete(link.id)
+    if link.kind == TaskLinkKind.BLOCKS:
+        publish_event(db, project.id, "task.updated", {"task_id": link.target_id})
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

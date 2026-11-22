@@ -203,6 +203,9 @@ export const tasksApi = {
   update: (projectId: string, id: string, body: TaskUpdate) =>
     http.patch<Task>(`/projects/${projectId}/tasks/${id}`, body),
   remove: (projectId: string, id: string) => http.delete(`/projects/${projectId}/tasks/${id}`),
+  duplicate: (projectId: string, id: string) => http.post<Task>(`/projects/${projectId}/tasks/${id}/duplicate`),
+  move: (projectId: string, id: string, targetProjectId: string) =>
+    http.post<Task>(`/projects/${projectId}/tasks/${id}/move`, { target_project_id: targetProjectId }),
   bulk: (projectId: string, body: TaskBulkRequest) => http.post<TaskBulkResult>(`/projects/${projectId}/tasks/bulk`, body),
   subtasks: (projectId: string, id: string) => http.get<Task[]>(`/projects/${projectId}/tasks/${id}/subtasks`),
   links: (projectId: string, id: string) => http.get<TaskLink[]>(`/projects/${projectId}/tasks/${id}/links`),

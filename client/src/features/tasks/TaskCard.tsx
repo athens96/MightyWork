@@ -144,6 +144,11 @@ export function TaskCard({
             </span>
           )}
           <span className="spacer" />
+          {(task.blocked_by_count ?? 0) > 0 && task.stage !== "done" && (
+            <span className="badge tone-err" title={`미완료 선행 일감 ${task.blocked_by_count}건에 차단됨`}>
+              차단 {task.blocked_by_count}
+            </span>
+          )}
           {task.subtask_count > 0 && (
             <span className={`badge ${task.subtask_done === task.subtask_count ? "tone-done" : ""}`} title="하위 일감">
               ↳ {task.subtask_done}/{task.subtask_count}

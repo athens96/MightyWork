@@ -8,6 +8,7 @@ import { CloseIcon, DocIcon, EditIcon, LinkIcon, PaperclipIcon, StarIcon } from 
 import { RefreshButton } from "../../components/RefreshButton";
 import { makeBranchName } from "../../lib/branchName";
 import { extractImageFile, insertUploadedImage } from "../../lib/editorUpload";
+import { can as canProject } from "../../lib/permissions";
 import { recordRecent, removeBookmark, togglePin, useNavBookmarks } from "../../lib/recentsAndPins";
 import { PROJECT_EVENT, type ProjectEventDetail } from "../../lib/sse";
 import { sortVersionLabels } from "../../lib/taskGrouping";
@@ -16,6 +17,7 @@ import { useLinkResolver } from "../../lib/useLinkResolver";
 import { Markdown } from "../../components/Markdown";
 import { MarkdownToolbar } from "../../components/MarkdownToolbar";
 import type { Attachment, Comment, GitHubLink, Task, TaskActivity, TaskLink, TaskLinkKind, TaskUpdate, WikiPageSummary } from "../../types";
+import { useProjects } from "../projects/ProjectsContext";
 import { useBoard } from "./boardContext";
 import { TaskChecklist } from "./TaskChecklist";
 import { TaskProperties } from "./TaskProperties";
@@ -29,7 +31,10 @@ export function TaskDetailPanel() {
   const { taskId = "" } = useParams();
   const navigate = useNavigate();
   const { user: me } = useAuth();
+  const { projects: allProjects } = useProjects();
   const [task, setTask] = useState<Task | null>(null);
+  const [moveOpen, setMoveOpen] = useState(false);
+  const [opsBusy, setOpsBusy] = useState(false);
   const [notFound, setNotFound] = useState(false);
   const [comments, setComments] = useState<Comment[]>([]);
   const [activity, setActivity] = useState<TaskActivity[]>([]);
@@ -83,6 +88,7 @@ export function TaskDetailPanel() {
         setNotFound(false);
         setDesc(null);
         setError(null);
+        setMoveOpen(false);
       }
       try {
         const [t, c, a, w, wl, subs, ls, atts, gh] = await Promise.all([
@@ -185,6 +191,14 @@ export function TaskDetailPanel() {
 
   const patch = async (body: TaskUpdate) => {
     if (!task) return;
+    if (
+      body.stage === "in_progress" &&
+      task.stage !== "in_progress" &&
+      unresolvedBlockers.length > 0 &&
+      !confirm(`미완료 선행 일감 ${unresolvedBlockers.length}건에 차단되어 있습니다. 그래도 '진행 중'으로 이동할까요?`)
+    ) {
+      return;
+    }
     setError(null);
     try {
       const updated = await tasksApi.update(project.id, task.id, body);
@@ -197,6 +211,52 @@ export function TaskDetailPanel() {
     } catch (e) {
       const dates = e instanceof ApiError && e.status === 422 && JSON.stringify(e.detail).includes("start_date");
       setError(dates ? "시작일은 종료일보다 늦을 수 없습니다." : "저장하지 못했습니다. 입력값을 확인하세요.");
+    }
+  };
+
+  const duplicateTask = async () => {
+    if (!task || opsBusy) return;
+    setOpsBusy(true);
+    setError(null);
+    try {
+      const copy = await tasksApi.duplicate(project.id, task.id);
+      onCreated(copy);
+      navigate(`/projects/${project.id}/tasks/${copy.id}`);
+    } catch (e) {
+      setError(e instanceof ApiError ? String(e.detail) : "일감 복제에 실패했습니다.");
+    } finally {
+      setOpsBusy(false);
+    }
+  };
+
+  const moveToProject = async (targetId: string, targetName: string) => {
+    if (!task || opsBusy) return;
+    setMoveOpen(false);
+    if (!confirm(`"${task.title}" 일감을 '${targetName}' 프로젝트로 이동할까요?\n상위·하위 연결, 사이클·마일스톤, 일감 간 링크는 초기화됩니다.`)) return;
+    setOpsBusy(true);
+    setError(null);
+    try {
+      const moved = await tasksApi.move(project.id, task.id, targetId);
+      removeBookmark("task", task.id);
+      onDeleted(task.id);
+      navigate(`/projects/${targetId}/tasks/${moved.id}`);
+    } catch (e) {
+      setError(e instanceof ApiError ? String(e.detail) : "프로젝트 이동에 실패했습니다.");
+    } finally {
+      setOpsBusy(false);
+    }
+  };
+
+  const completeParent = async () => {
+    if (!parentTask || opsBusy) return;
+    setOpsBusy(true);
+    try {
+      const updatedParent = await tasksApi.update(project.id, parentTask.id, { stage: "done" });
+      onChanged(updatedParent);
+    } catch (e) {
+      setError(e instanceof ApiError ? String(e.detail) : "상위 일감 완료 처리에 실패했습니다.");
+    } finally {
+      setOpsBusy(false);
     }
   };
 
@@ -259,6 +319,18 @@ export function TaskDetailPanel() {
   const taskKey = task ? `${project.key}-${task.number}` : "";
   const parentTask = task?.parent_id ? tasks.find((t) => t.id === task.parent_id) : undefined;
   const linkCandidates = tasks.filter((t) => t.id !== task?.id);
+  const moveTargets = allProjects.filter((p) => p.id !== project.id && canProject(p, "create"));
+  const unresolvedBlockers = taskLinks.filter((l) => l.kind === "blocked_by" && l.stage !== "done");
+  const allSubtasksDone = Boolean(task && task.stage !== "done" && subtasks.length > 0 && subtasks.every((s) => s.stage === "done"));
+  const siblingSubtasks = parentTask ? tasks.filter((t) => t.parent_id === parentTask.id) : [];
+  const allSiblingsDone = Boolean(
+    task &&
+      task.stage === "done" &&
+      parentTask &&
+      parentTask.stage !== "done" &&
+      siblingSubtasks.length > 0 &&
+      siblingSubtasks.every((s) => s.stage === "done"),
+  );
 
   return (
     <>
@@ -285,6 +357,40 @@ export function TaskDetailPanel() {
             >
               {branchCopied ? "브랜치 복사됨" : "브랜치 복사"}
             </button>
+          )}
+          {task && can("create") && (
+            <button type="button" className="btn btn-sm btn-ghost" disabled={opsBusy} onClick={duplicateTask} title="현재 일감 복제">
+              복제
+            </button>
+          )}
+          {task && can("delete") && moveTargets.length > 0 && (
+            <div className="menu-anchor">
+              <button
+                type="button"
+                className="btn btn-sm btn-ghost"
+                disabled={opsBusy}
+                onClick={() => setMoveOpen((o) => !o)}
+                title="다른 프로젝트로 이동"
+              >
+                이동
+              </button>
+              {moveOpen && (
+                <div className="popover move-project-menu">
+                  <div className="move-project-head">이동할 프로젝트 선택</div>
+                  {moveTargets.map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      className="menu-item"
+                      onClick={() => moveToProject(p.id, p.name)}
+                    >
+                      <span>{p.name}</span>
+                      <span className="mono muted">{p.key}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           )}
           {task && (
             <button
@@ -326,12 +432,37 @@ export function TaskDetailPanel() {
           <div className="sheet-body">
             <div className="detail-main">
               {error && <div className="alert tone-err">{error}</div>}
+              {unresolvedBlockers.length > 0 && task.stage !== "done" && (
+                <div className="alert tone-err task-banner" role="alert">
+                  <div className="task-banner-text">
+                    <strong>차단됨</strong> — 미완료 선행 일감 {unresolvedBlockers.length}건이 먼저 끝나야 합니다:{" "}
+                    {unresolvedBlockers.map((b, idx) => (
+                      <span key={b.id}>
+                        {idx > 0 && ", "}
+                        <Link to={`/projects/${project.id}/tasks/${b.task_id}`} className="mono">
+                          {project.key}-{b.number} {b.title}
+                        </Link>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
               {parentTask && (
                 <div className="parent-crumb">
                   <span className="muted">상위 일감</span>
                   <Link to={`/projects/${project.id}/tasks/${parentTask.id}`} className="conn-chip">
                     {project.key}-{parentTask.number} {parentTask.title}
                   </Link>
+                </div>
+              )}
+              {allSiblingsDone && parentTask && editable && (
+                <div className="task-banner task-banner-done">
+                  <span className="task-banner-text">
+                    상위 일감 <strong>{project.key}-{parentTask.number}</strong> 의 하위 일감({siblingSubtasks.length}/{siblingSubtasks.length})이 모두 완료되었습니다.
+                  </span>
+                  <button type="button" className="btn btn-sm btn-primary" disabled={opsBusy} onClick={completeParent}>
+                    상위 일감 완료 처리
+                  </button>
                 </div>
               )}
 
@@ -447,6 +578,16 @@ export function TaskDetailPanel() {
                 <header className="section-head">
                   <h3>하위 일감 {subtasks.length > 0 && `${subtasks.filter((s) => s.stage === "done").length}/${subtasks.length}`}</h3>
                 </header>
+                {allSubtasksDone && editable && (
+                  <div className="task-banner task-banner-done">
+                    <span className="task-banner-text">
+                      모든 하위 일감({subtasks.length}/{subtasks.length})이 완료되었습니다. 이 상위 일감도 완료 처리할까요?
+                    </span>
+                    <button type="button" className="btn btn-sm btn-primary" onClick={() => patch({ stage: "done" })}>
+                      완료 처리
+                    </button>
+                  </div>
+                )}
                 {subtasks.length > 0 && (
                   <div className="subtask-list">
                     {subtasks.map((s) => (

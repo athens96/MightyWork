@@ -122,6 +122,7 @@ class TaskRead(Task):
     comment_count: int = 0
     subtask_count: int = 0
     subtask_done: int = 0
+    blocked_by_count: int = 0  # 미완료 선행 일감(BLOCKS)에 의해 차단된 건수
 
 
 class TaskCreate(TaskBase):

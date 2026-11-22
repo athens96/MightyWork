@@ -414,6 +414,13 @@ export function TaskBoardPage() {
   const moveStage = (taskId: string, target: PipelineStage) => {
     const current = tasks.find((t) => t.id === taskId);
     if (!current || current.stage === target) return;
+    if (
+      target === "in_progress" &&
+      (current.blocked_by_count ?? 0) > 0 &&
+      !confirm(`미완료 선행 일감 ${current.blocked_by_count}건에 차단되어 있습니다. 그래도 '진행 중'으로 이동할까요?`)
+    ) {
+      return;
+    }
     patchTask(taskId, { stage: target });
   };
 

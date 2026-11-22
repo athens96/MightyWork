@@ -268,6 +268,7 @@ export interface Task {
   comment_count: number; // 응답 전용
   subtask_count: number;
   subtask_done: number;
+  blocked_by_count?: number; // 미완료 선행(blocks) 일감 수
   created_by: string; // 보고자
   via_client?: string | null; // MCP AI 에이전트 출처
   created_at: string;
@@ -279,7 +280,7 @@ export interface MyTask extends Task {
   project_name: string;
 }
 
-type TaskServerFields = "id" | "project_id" | "number" | "created_by" | "created_at" | "updated_at" | "comment_count" | "subtask_count" | "subtask_done";
+type TaskServerFields = "id" | "project_id" | "number" | "created_by" | "created_at" | "updated_at" | "comment_count" | "subtask_count" | "subtask_done" | "blocked_by_count";
 export type TaskCreate = Pick<Task, "title"> & Partial<Omit<Task, TaskServerFields>>;
 export type TaskUpdate = Partial<Omit<Task, TaskServerFields>>;
 

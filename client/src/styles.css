@@ -2411,3 +2411,40 @@ button.tile.fill-run.is-active {
   background: var(--subtle);
   color: var(--err-text);
 }
+
+/* ==========================================================================
+   MW-25: 일감 복제 · 프로젝트 이동 · 차단 경고 · 하위 일감 완료 제안
+   ========================================================================== */
+.move-project-menu {
+  right: 0;
+  left: auto;
+  min-width: 210px;
+}
+.move-project-head {
+  padding: 5px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ink3);
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 4px;
+}
+.task-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+  font-size: 12.5px;
+}
+.task-banner-text {
+  flex: 1;
+  min-width: 180px;
+}
+.task-banner-done {
+  padding: 9px 12px;
+  border-radius: var(--r-entry);
+  border: 1px solid color-mix(in srgb, var(--done) 35%, var(--line));
+  background: var(--done-soft);
+  color: var(--done-text);
+}
