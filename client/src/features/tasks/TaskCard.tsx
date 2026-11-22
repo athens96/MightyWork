@@ -13,6 +13,7 @@ interface Props {
   assignee: User | undefined;
   stages: PipelineStageInfo[];
   selected: boolean;
+  compact?: boolean;
   checked?: boolean;
   onToggleCheck?: (taskId: string) => void;
   onMoveStage?: (taskId: string, stage: PipelineStage) => void;
@@ -33,9 +34,8 @@ function firstLine(md: string): string | undefined {
 }
 
 /**
- * 일감 카드 — MightyCode "마이티 그래프 블록" 구조 (카드 시안 A 선택).
- * 머리줄(톤 표시·키·활동 막대·상태·추정치) → 제목 → 미리보기(다음 할 일/설명) → 작업자·배지.
- * 진행 중이면 run 색 점선이 흐르는 외곽선 + 후광.
+ * 일감 카드 — MightyCode "마이티 그래프 블록" 구조.
+ * 우선순위(긴급/높음) 좌측 컬러 바, 마감 초과 강조, 컴팩트(밀집) 보기 지원.
  */
 export function TaskCard({
   task,
@@ -44,6 +44,7 @@ export function TaskCard({
   assignee,
   stages,
   selected,
+  compact = false,
   checked,
   onToggleCheck,
   onMoveStage,
@@ -60,10 +61,11 @@ export function TaskCard({
   const nextItem = task.checklist.find((i) => !i.done);
   const preview = nextItem ? `다음 할 일 · ${nextItem.text}` : firstLine(task.description);
   const stageLabel = stages.find((s) => s.key === task.stage)?.label ?? task.stage;
+  const prioClass = task.priority === "urgent" ? "prio-urgent" : task.priority === "high" ? "prio-high" : "";
 
   return (
     <article
-      className={`task-card ${STAGE_TONE[task.stage]} ${running ? "is-running" : ""} ${selected ? "selected" : ""} ${checked ? "is-checked" : ""} ${dragging ? "is-dragging" : ""}`}
+      className={`task-card ${STAGE_TONE[task.stage]} ${prioClass} ${due === "overdue" ? "is-overdue" : ""} ${running ? "is-running" : ""} ${compact ? "is-compact" : ""} ${selected ? "selected" : ""} ${checked ? "is-checked" : ""} ${dragging ? "is-dragging" : ""}`}
       role="button"
       tabIndex={0}
       draggable={draggable}
@@ -85,7 +87,7 @@ export function TaskCard({
         )}
         <span className="task-tint" />
         <span className="task-key">{taskKey}</span>
-        {running && (
+        {running && !compact && (
           <span className="activity-bars" aria-hidden="true">
             <i />
             <i />
@@ -96,7 +98,7 @@ export function TaskCard({
         <span className="spacer" />
         {onMoveStage ? (
           <>
-            <span className="pill desktop-stage-pill">{stageLabel}</span>
+            {!compact && <span className="pill desktop-stage-pill">{stageLabel}</span>}
             <select
               className="mobile-stage-select"
               value={task.stage}
@@ -115,7 +117,7 @@ export function TaskCard({
             </select>
           </>
         ) : (
-          <span className="pill">{stageLabel}</span>
+          !compact && <span className="pill">{stageLabel}</span>
         )}
         {task.estimate != null && <span className="token">{task.estimate}pt</span>}
       </header>
@@ -123,13 +125,15 @@ export function TaskCard({
       <div className="task-body">
         <div className="task-title">
           {priority && <span className={`pill ${priority.tone}`}>{priority.label}</span>}
-          {task.title}
+          <span className="task-title-text">{task.title}</span>
         </div>
-        {preview && <div className="task-preview">{preview}</div>}
+        {!compact && preview && <div className="task-preview">{preview}</div>}
         <div className="task-foot">
-          <Avatar user={assignee} size={18} />
-          <span className="task-who">{assignee ? assignee.name || assignee.email : "미지정"}</span>
-          {task.via_client && (
+          {(assignee || !compact) && <Avatar user={assignee} size={compact ? 16 : 18} />}
+          {(!compact || assignee) && (
+            <span className="task-who">{assignee ? assignee.name || assignee.email : "미지정"}</span>
+          )}
+          {!compact && task.via_client && (
             <span className="pill tone-agent agent-via" title={`MCP 클라이언트(${task.via_client}) 출처`}>
               via {task.via_client}
             </span>
@@ -145,7 +149,7 @@ export function TaskCard({
               <CheckSquareIcon size={11} /> {doneItems}/{task.checklist.length}
             </span>
           )}
-          {task.comment_count > 0 && (
+          {!compact && task.comment_count > 0 && (
             <span className="badge" title="덧글">
               <CommentIcon size={11} /> {task.comment_count}
             </span>

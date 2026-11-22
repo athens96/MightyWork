@@ -1617,3 +1617,337 @@ mark { background: color-mix(in srgb, var(--wait) 35%, transparent); color: inhe
   .copy-row { flex-wrap: wrap; }
   .copy-row code { max-width: 100%; overflow-x: auto; }
 }
+
+/* ==========================================================================
+   MW-16: 대량 일감 정리 · 완료 월별 묶음 · 컴팩트 밀도 · 스윔레인 · 컬럼 접기
+   ========================================================================== */
+button.tile {
+  text-align: left;
+  align-items: flex-start;
+  width: 100%;
+  transition: transform var(--quick) var(--ease), box-shadow var(--quick) var(--ease), border-color var(--quick) var(--ease);
+}
+button.tile:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgb(var(--shadow-color) / 0.1);
+}
+button.tile.is-active {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+button.tile.fill-run.is-active {
+  outline-color: var(--ink);
+}
+
+/* 핵심 정리 컨트롤 바 & 보드 즉시 검색 */
+.organize-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.quick-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  min-width: 190px;
+  flex: 1 1 200px;
+  max-width: 280px;
+  padding: 0 4px 0 9px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-search);
+  background: var(--card);
+  color: var(--ink3);
+}
+.quick-filter:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 80%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 80%, transparent);
+}
+.quick-filter input {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  font-size: 12px;
+}
+.quick-filter input:focus { box-shadow: none; }
+.quick-filter .icon-btn { width: 20px; height: 20px; flex: none; }
+.filter-bar.is-advanced {
+  padding: 8px 10px;
+  border-radius: var(--r-row);
+  background: var(--card-raised);
+  border: 1px solid var(--line);
+}
+
+/* 카드 우선순위 좌측 강조 · 마감 초과 하이라이트 · 컴팩트 밀도 */
+.task-card.prio-urgent {
+  border-left: 3px solid var(--err);
+}
+.task-card.prio-high {
+  border-left: 3px solid var(--wait);
+}
+.task-card.is-overdue:not(.is-running) {
+  border-color: color-mix(in srgb, var(--err) 45%, var(--line));
+}
+.task-card.is-compact .task-head {
+  height: 22px;
+  padding: 0 6px;
+  gap: 5px;
+}
+.task-card.is-compact .task-body {
+  padding: 5px 7px 6px;
+  gap: 4px;
+}
+.task-card.is-compact .task-title {
+  font-size: 12px;
+  line-height: 1.3;
+  gap: 4px;
+}
+.task-card.is-compact .task-title-text {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.task-card.is-compact .task-foot {
+  gap: 3px;
+}
+
+/* 보드 컬럼 접기(세로 스트립) · 긴 컬럼 더 보기 */
+.col-collapse-btn {
+  width: 20px;
+  height: 20px;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--ink3);
+  margin-left: 2px;
+}
+.column.is-collapsed {
+  width: 44px;
+  min-height: 280px;
+  align-items: center;
+  padding: 10px 4px;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+  transition: background var(--quick) var(--ease), border-color var(--quick) var(--ease);
+}
+.column.is-collapsed:hover {
+  border-color: var(--accent);
+}
+.col-collapsed-count {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--tone-text);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 1px 6px;
+}
+.col-collapsed-label {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink2);
+  letter-spacing: 0.04em;
+  margin-top: 2px;
+}
+.col-more-btn {
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: var(--r-row);
+  border: 1px dashed var(--line-strong);
+  background: color-mix(in srgb, var(--card) 70%, transparent);
+  color: var(--ink2);
+  font-size: 11.5px;
+  font-weight: 600;
+  text-align: center;
+  transition: border-color var(--quick) var(--ease), color var(--quick) var(--ease), background var(--quick) var(--ease);
+}
+.col-more-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--card);
+}
+
+/* 완료 컬럼 월별 아코디언 묶음 */
+.done-subhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink3);
+}
+.done-empty-note {
+  padding: 8px 6px;
+  border-radius: var(--r-row);
+  background: color-mix(in srgb, var(--card) 60%, transparent);
+  font-size: 11px;
+  color: var(--ink3);
+  text-align: center;
+}
+.month-bucket {
+  border: 1px solid var(--line);
+  border-radius: var(--r-row);
+  background: var(--card);
+  overflow: hidden;
+}
+.month-bucket-head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 9px;
+  border: none;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink2);
+  text-align: left;
+  transition: background var(--quick) var(--ease), color var(--quick) var(--ease);
+}
+.month-bucket-head:hover {
+  background: var(--subtle);
+  color: var(--ink);
+}
+.month-bucket-head svg,
+.swimlane-head svg,
+.list-group-btn svg,
+.list-bucket-btn svg {
+  flex: none;
+  color: var(--ink3);
+  transition: transform var(--quick) var(--ease);
+}
+.month-bucket-head svg.is-open,
+.swimlane-head svg.is-open,
+.list-group-btn svg.is-open,
+.list-bucket-btn svg.is-open {
+  transform: rotate(90deg);
+}
+.month-bucket-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.month-bucket-count {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--done-text);
+  background: var(--done-soft);
+  padding: 1px 6px;
+  border-radius: 9px;
+}
+.month-bucket-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px;
+  border-top: 1px solid var(--line);
+  background: color-mix(in srgb, var(--done) 5%, var(--page));
+}
+
+/* 보드 스윔레인 */
+.swimlanes {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.swimlane {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.swimlane-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-row);
+  background: var(--card);
+  font-size: 12.5px;
+  color: var(--ink);
+  text-align: left;
+}
+.swimlane-head:hover {
+  border-color: var(--line-strong);
+  background: var(--card-raised);
+}
+.swimlane-board {
+  min-height: 0;
+}
+
+/* 리스트 뷰 그룹 아코디언 · 월별 완료 묶음 · 컴팩트 밀도 */
+.task-list-table.is-compact th,
+.task-list-table.is-compact td {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+.task-list-table tr.prio-urgent td:first-child {
+  box-shadow: inset 3px 0 0 var(--err);
+}
+.task-list-table tr.prio-high td:first-child {
+  box-shadow: inset 3px 0 0 var(--wait);
+}
+.list-group-row td {
+  padding: 0 !important;
+  background: var(--card-raised);
+}
+.list-group-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 12px;
+  border: none;
+  background: transparent;
+  font-size: 12px;
+  color: var(--ink);
+  text-align: left;
+}
+.list-group-btn:hover {
+  background: var(--subtle);
+}
+.list-bucket-row td {
+  padding: 0 !important;
+  background: color-mix(in srgb, var(--done-soft) 40%, var(--card));
+}
+.list-bucket-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 14px;
+  border: none;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink2);
+  text-align: left;
+}
+.list-bucket-btn:hover {
+  background: var(--subtle);
+  color: var(--ink);
+}
+
+@media (max-width: 860px) {
+  .quick-filter {
+    flex: 1 1 100%;
+    max-width: none;
+    height: 36px;
+  }
+  .column.is-collapsed {
+    width: 48px;
+    min-height: 220px;
+  }
+}
