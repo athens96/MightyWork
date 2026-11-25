@@ -211,6 +211,15 @@ async fn upload_attachment(
         format!("첨부 업로드: {} ({}B)", att.filename, att.size),
         HashMap::new(),
     );
+    if let Some(ref wid) = att.wiki_page_id {
+        crate::services::events::publish_event(
+            &state.db,
+            &state.events,
+            &access.project.id,
+            "wiki.updated",
+            serde_json::json!({ "page_id": wid }),
+        );
+    }
     Ok((StatusCode::CREATED, Json(to_read(att))))
 }
 
@@ -292,5 +301,14 @@ async fn delete_attachment(
         format!("첨부 삭제: {}", att.filename),
         HashMap::new(),
     );
+    if let Some(ref wid) = att.wiki_page_id {
+        crate::services::events::publish_event(
+            &state.db,
+            &state.events,
+            &access.project.id,
+            "wiki.updated",
+            serde_json::json!({ "page_id": wid }),
+        );
+    }
     Ok(StatusCode::NO_CONTENT)
 }

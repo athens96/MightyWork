@@ -15,14 +15,17 @@ import { EditorSuggestBar, useEditorSuggest } from "../../components/EditorSugge
 import { ChevronIcon, EditIcon, HistoryIcon, PaperclipIcon, PlusIcon, StarIcon, TrashIcon } from "../../components/icons";
 import { Markdown, TableOfContents } from "../../components/Markdown";
 import { MarkdownToolbar } from "../../components/MarkdownToolbar";
+import { RefreshButton } from "../../components/RefreshButton";
 import { extractHeadings } from "../../lib/markdownHelpers";
 import { clearDraft, loadDraft, saveDraft, useBeforeUnloadWarning, type SavedDraft } from "../../lib/draftStorage";
 import { can } from "../../lib/permissions";
 import { recordRecent, removeBookmark, togglePin, useNavBookmarks } from "../../lib/recentsAndPins";
-import { PROJECT_EVENT, type ProjectEventDetail } from "../../lib/sse";
+import { PROJECT_EVENT, subscribeSSE, type ProjectEventDetail, type SSEStatus } from "../../lib/sse";
 import { extractImageFile, insertUploadedImage } from "../../lib/editorUpload";
 import { timeAgo, todayYmd } from "../../lib/time";
+import { useAutoRefresh } from "../../lib/useAutoRefresh";
 import { useLinkResolver } from "../../lib/useLinkResolver";
+import { decidePageSyncAction, planWikiRefresh } from "../../lib/wikiRefresh";
 import { collectDescendantIds, WIKI_TEMPLATES, type WikiTemplate } from "../../lib/wikiTemplates";
 import { injectTaskKeyIntoChecklist, injectTaskKeyIntoSelection } from "../../lib/wikiToTask";
 import { STAGE_TONE } from "../tasks/tones";
@@ -64,7 +67,14 @@ export function WikiPage() {
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [selectionPop, setSelectionPop] = useState<{ text: string; top: number; left: number } | null>(null);
   const [createdNotice, setCreatedNotice] = useState<{ id: string; key: string; title: string } | null>(null);
+  const [liveStatus, setLiveStatus] = useState<SSEStatus>("reconnecting");
   const mdWrapRef = useRef<HTMLDivElement>(null);
+  const editingRef = useRef(editing);
+  editingRef.current = editing;
+  const pageRef = useRef(page);
+  pageRef.current = page;
+  const pageIdRef = useRef(pageId);
+  pageIdRef.current = pageId;
   const suggest = useEditorSuggest(draft.content, editorCursor, pages, members);
   const { pins } = useNavBookmarks();
   const isPagePinned = Boolean(page && pins.some((p) => p.kind === "wiki" && p.id === page.id));
@@ -193,19 +203,120 @@ export function WikiPage() {
     if (pageId) reloadLinks(pageId);
   }, [pageId, reloadLinks]);
 
-  // 실시간 위키 댓글 갱신 (SSE)
-  useEffect(() => {
-    if (!pageId) return;
-    const onEvent = (e: Event) => {
-      const detail = (e as CustomEvent<ProjectEventDetail>).detail;
-      if (!detail || detail.projectId !== project.id || detail.data.page_id !== pageId) return;
-      if (detail.event.startsWith("wiki.comment_")) {
-        wikiApi.listComments(project.id, pageId).then(setComments, () => {});
+  // 활성 페이지 단건 재조회 (편집 중이면 초안을 덮어쓰지 않고 충돌 배너만 띄움)
+  const reloadActivePage = useCallback(
+    async (id: string) => {
+      try {
+        const latest = await wikiApi.get(project.id, id);
+        if (pageIdRef.current !== id) return;
+        const action = decidePageSyncAction(editingRef.current, pageRef.current?.updated_at, latest.updated_at);
+        if (action === "replace") {
+          setPage(latest);
+        } else if (action === "conflict") {
+          setConflict(latest);
+        }
+      } catch (e) {
+        if (pageIdRef.current !== id) return;
+        if (e instanceof ApiError && e.status === 404 && !editingRef.current) {
+          setPage(null);
+          navigate(basePath, { replace: true });
+        }
       }
+    },
+    [project.id, basePath, navigate],
+  );
+
+  const reloadAll = useCallback(async () => {
+    const tasks: Promise<unknown>[] = [reloadTree()];
+    const activeId = pageIdRef.current;
+    if (activeId) {
+      tasks.push(reloadActivePage(activeId));
+      tasks.push(reloadLinks(activeId));
+    }
+    await Promise.all(tasks);
+  }, [reloadTree, reloadActivePage, reloadLinks]);
+
+  const { refreshing, lastUpdated, refresh, markUpdated } = useAutoRefresh(reloadAll, {
+    intervalMs: 30_000,
+    shortcutKey: true,
+  });
+
+  const sseHandlersRef = useRef({ reloadTree, reloadActivePage, reloadLinks, reloadAll, markUpdated });
+  sseHandlersRef.current = { reloadTree, reloadActivePage, reloadLinks, reloadAll, markUpdated };
+
+  // MW-39: 위키 실시간 프로젝트 SSE 구독 + 재연결 시 전체 동기화
+  useEffect(() => {
+    let wikiTimer: number | undefined;
+    let linkTimer: number | undefined;
+    let pendingTree = false;
+    let pendingPage = false;
+    let pendingLinks = false;
+    const stop = subscribeSSE(
+      `/projects/${project.id}/events`,
+      (msg) => {
+        window.dispatchEvent(
+          new CustomEvent<ProjectEventDetail>(PROJECT_EVENT, {
+            detail: { projectId: project.id, event: msg.event, data: msg.data },
+          }),
+        );
+        const h = sseHandlersRef.current;
+        const activeId = pageIdRef.current;
+        const plan = planWikiRefresh(msg.event, msg.data, activeId);
+
+        if (plan.comments && activeId) {
+          wikiApi.listComments(project.id, activeId).then((list) => {
+            if (pageIdRef.current === activeId) {
+              setComments(list);
+              h.markUpdated();
+            }
+          }, () => {});
+          return;
+        }
+
+        if (plan.tree || plan.page) {
+          pendingTree = pendingTree || plan.tree;
+          pendingPage = pendingPage || plan.page;
+          pendingLinks = pendingLinks || plan.links;
+          if (wikiTimer) window.clearTimeout(wikiTimer);
+          wikiTimer = window.setTimeout(() => {
+            const needTree = pendingTree;
+            const needPage = pendingPage;
+            const needLinks = pendingLinks;
+            pendingTree = false;
+            pendingPage = false;
+            pendingLinks = false;
+            const latestH = sseHandlersRef.current;
+            const jobs: Promise<unknown>[] = [];
+            if (needTree) jobs.push(latestH.reloadTree());
+            const curId = pageIdRef.current;
+            if (curId && needPage) jobs.push(latestH.reloadActivePage(curId));
+            if (curId && needLinks) jobs.push(latestH.reloadLinks(curId));
+            if (jobs.length > 0) void Promise.all(jobs).then(latestH.markUpdated, () => {});
+          }, 150);
+          return;
+        }
+
+        if (plan.links && activeId) {
+          if (linkTimer) window.clearTimeout(linkTimer);
+          linkTimer = window.setTimeout(() => {
+            const curId = pageIdRef.current;
+            const latestH = sseHandlersRef.current;
+            if (curId) void latestH.reloadLinks(curId).then(latestH.markUpdated, () => {});
+          }, 250);
+        }
+      },
+      setLiveStatus,
+      () => {
+        const h = sseHandlersRef.current;
+        void h.reloadAll().then(h.markUpdated, () => {});
+      },
+    );
+    return () => {
+      if (wikiTimer) window.clearTimeout(wikiTimer);
+      if (linkTimer) window.clearTimeout(linkTimer);
+      stop();
     };
-    window.addEventListener(PROJECT_EVENT, onEvent);
-    return () => window.removeEventListener(PROJECT_EVENT, onEvent);
-  }, [project.id, pageId]);
+  }, [project.id]);
 
   // 링크 안 된 언급 → [[링크]] 로 바꾸기 (편집 권한)
   const linkMentions = async (sources: UnlinkedMention[]) => {
@@ -410,6 +521,7 @@ export function WikiPage() {
       <aside className={`pane wiki-nav ${pageId && !navOpen ? "is-collapsed-mobile" : ""}`}>
         <div className="pane-header">
           <span className="pane-title">페이지 {pages.length}</span>
+          <RefreshButton compact refreshing={refreshing} lastUpdated={lastUpdated} onClick={refresh} shortcut />
           {pageId && (
             <button type="button" className="btn btn-sm btn-ghost wiki-nav-toggle" onClick={() => setNavOpen((o) => !o)}>
               {navOpen ? "접기" : "목차"}
@@ -477,7 +589,18 @@ export function WikiPage() {
       </aside>
 
       <article className="pane wiki-body">
-        {!pageId && <WikiIndex pages={pages} users={members} basePath={basePath} projectId={project.id} />}
+        {!pageId && (
+          <WikiIndex
+            pages={pages}
+            users={members}
+            basePath={basePath}
+            projectId={project.id}
+            refreshing={refreshing}
+            lastUpdated={lastUpdated}
+            onRefresh={refresh}
+            liveStatus={liveStatus}
+          />
+        )}
         {pageId && !page && <div className="empty">불러오는 중…</div>}
 
         {page && !editing && (
@@ -492,6 +615,14 @@ export function WikiPage() {
                 ))}
                 <span className="current">{page.title}</span>
               </nav>
+              <RefreshButton compact refreshing={refreshing} lastUpdated={lastUpdated} onClick={refresh} shortcut />
+              <span
+                className={`live-pill ${liveStatus === "connected" ? "is-live" : ""}`}
+                title={liveStatus === "connected" ? "실시간 동기화 연결됨 (SSE) · 30초마다 자동 보강" : "실시간 연결 재시도 중 · 30초마다 자동 새로고침"}
+              >
+                <span className="live-dot" />
+                {liveStatus === "connected" ? "실시간" : "연결 중"}
+              </span>
               <button
                 type="button"
                 className={`icon-btn star-btn ${isPagePinned ? "is-pinned" : ""}`}

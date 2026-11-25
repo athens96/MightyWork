@@ -43,4 +43,7 @@ async def import_page(
         updated_by=user.id,
         **imported.props,
     )
-    return db.wiki_pages.create(page)
+    created = db.wiki_pages.create(page)
+    from app.services.events import publish_event
+    publish_event(db, project.id, "wiki.created", {"page_id": created.id})
+    return created

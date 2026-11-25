@@ -249,5 +249,12 @@ async fn import_page(
         deleted_by: None,
     };
     state.db.wiki_pages.create(&page)?;
+    crate::services::events::publish_event(
+        &state.db,
+        &state.events,
+        &page.project_id,
+        "wiki.created",
+        serde_json::json!({ "page_id": page.id }),
+    );
     Ok((StatusCode::CREATED, Json(page)))
 }

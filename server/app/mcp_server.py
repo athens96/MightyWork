@@ -595,6 +595,7 @@ def build_mcp(settings: Settings, db: Database) -> MCPServer:
         db.wiki_pages.create(pg)
         via = actor_client()
         record_revision(db, pg, user.id, note=f"MCP 작성 ({via})" if via else "MCP 작성", via_client=via)
+        publish_event(db, a.project.id, "wiki.created", {"page_id": pg.id})
         return page_summary(pg) | {"content": pg.content}
 
     @mcp.tool(annotations=UPDATE)
@@ -624,6 +625,7 @@ def build_mcp(settings: Settings, db: Database) -> MCPServer:
         via = actor_client()
         record_revision(db, after, user.id, note=f"MCP 수정 ({via})" if via else "MCP 수정", via_client=via)
         propagate_rename(db, a.project, after, before.title)
+        publish_event(db, a.project.id, "wiki.updated", {"page_id": after.id})
         return page_summary(after) | {"content": after.content}
 
     return mcp

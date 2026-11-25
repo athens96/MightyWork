@@ -222,6 +222,13 @@ async fn create_page(
         format!("위키 '{}' 생성", page.title),
         HashMap::new(),
     );
+    publish_event(
+        &state.db,
+        &state.events,
+        &access.project.id,
+        "wiki.created",
+        json!({ "page_id": page.id }),
+    );
     Ok((StatusCode::CREATED, Json(page)))
 }
 
@@ -362,6 +369,13 @@ async fn delete_page(
         &page.id,
         summary,
         HashMap::new(),
+    );
+    publish_event(
+        &state.db,
+        &state.events,
+        &access.project.id,
+        "wiki.deleted",
+        json!({ "page_id": page.id }),
     );
     Ok(StatusCode::NO_CONTENT)
 }
@@ -658,6 +672,13 @@ async fn restore_page_revision(
         &page.id,
         format!("위키 '{}' v{} 으로 복원", restored.title, rev.version),
         details,
+    );
+    publish_event(
+        &state.db,
+        &state.events,
+        &access.project.id,
+        "wiki.updated",
+        json!({ "page_id": restored.id }),
     );
     Ok(Json(restored))
 }

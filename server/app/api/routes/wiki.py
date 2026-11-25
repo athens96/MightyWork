@@ -126,6 +126,7 @@ def create_page(project: ProjectDep, body: WikiPageCreate, user: CurrentUser, db
         target_id=page.id,
         summary=f"위키 '{page.title}' 생성",
     )
+    publish_event(db, project.id, "wiki.created", {"page_id": page.id})
     return page
 
 
@@ -192,6 +193,7 @@ def delete_page(project: ProjectDep, page_id: str, user: CurrentUser, db: DbDep,
         target_id=page.id,
         summary=summary,
     )
+    publish_event(db, project.id, "wiki.deleted", {"page_id": page.id})
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -353,4 +355,5 @@ def restore_page_revision(project: ProjectDep, page_id: str, rev_id: str, user: 
         summary=f"위키 '{restored.title}' v{rev.version} 으로 복원",
         details={"revision_id": rev.id, "version": rev.version},
     )
+    publish_event(db, project.id, "wiki.updated", {"page_id": restored.id})
     return restored

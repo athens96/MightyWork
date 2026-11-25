@@ -1318,6 +1318,13 @@ fn dispatch_tool(state: &AppState, claims: &McpTokenClaims, name: &str, args: &V
                 None => "MCP 작성".into(),
             };
             let _ = record_revision(ctx.db(), &pg, &user.id, &note, via);
+            publish_event(
+                ctx.db(),
+                &state.events,
+                &pg.project_id,
+                "wiki.created",
+                json!({ "page_id": pg.id }),
+            );
             let mut obj = ctx.page_summary(&pg);
             if let Some(m) = obj.as_object_mut() {
                 m.insert("content".into(), json!(pg.content));
@@ -1370,6 +1377,13 @@ fn dispatch_tool(state: &AppState, claims: &McpTokenClaims, name: &str, args: &V
             };
             let _ = record_revision(ctx.db(), &after, &user.id, &note, via);
             let _ = propagate_rename(ctx.db(), &a.project, &after, &before.title);
+            publish_event(
+                ctx.db(),
+                &state.events,
+                &a.project.id,
+                "wiki.updated",
+                json!({ "page_id": after.id }),
+            );
             let mut obj = ctx.page_summary(&after);
             if let Some(m) = obj.as_object_mut() {
                 m.insert("content".into(), json!(after.content));

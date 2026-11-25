@@ -3,6 +3,8 @@ import { Link, useSearchParams } from "react-router-dom";
 import { wikiApi } from "../../api";
 import { saveBlob } from "../../api/http";
 import { Avatar } from "../../components/Avatar";
+import { RefreshButton } from "../../components/RefreshButton";
+import type { SSEStatus } from "../../lib/sse";
 import { timeAgo } from "../../lib/time";
 import type { PageStatus, PageType, User, WikiPageSummary } from "../../types";
 import { PAGE_STATUS_LABEL, PAGE_STATUS_TONE, PAGE_TYPE_LABEL } from "./pageProps";
@@ -18,7 +20,25 @@ function isStalePage(p: WikiPageSummary, nowMs: number): boolean {
  * 위키 문서 목록 — Properties(타입·상태·담당자·태그) + 문서 건강 점검(방치·고아·깨진 링크).
  * 필터는 URL(?type=&status=&owner=&tag=&q=&health=)에 남아 링크로 공유할 수 있다.
  */
-export function WikiIndex({ pages, users, basePath, projectId }: { pages: WikiPageSummary[]; users: User[]; basePath: string; projectId: string }) {
+export function WikiIndex({
+  pages,
+  users,
+  basePath,
+  projectId,
+  refreshing = false,
+  lastUpdated = null,
+  onRefresh,
+  liveStatus,
+}: {
+  pages: WikiPageSummary[];
+  users: User[];
+  basePath: string;
+  projectId: string;
+  refreshing?: boolean;
+  lastUpdated?: Date | null;
+  onRefresh?: () => void;
+  liveStatus?: SSEStatus;
+}) {
   const [params, setParams] = useSearchParams();
   const f = {
     type: params.get("type") ?? "",
@@ -69,6 +89,18 @@ export function WikiIndex({ pages, users, basePath, projectId }: { pages: WikiPa
           <button className="btn btn-sm btn-ghost" onClick={() => setParams({}, { replace: true })}>
             필터 초기화
           </button>
+        )}
+        {onRefresh && (
+          <RefreshButton refreshing={refreshing} lastUpdated={lastUpdated} onClick={onRefresh} shortcut />
+        )}
+        {liveStatus && (
+          <span
+            className={`live-pill ${liveStatus === "connected" ? "is-live" : ""}`}
+            title={liveStatus === "connected" ? "실시간 동기화 연결됨 (SSE) · 30초마다 자동 보강" : "실시간 연결 재시도 중 · 30초마다 자동 새로고침"}
+          >
+            <span className="live-dot" />
+            {liveStatus === "connected" ? "실시간" : "연결 중"}
+          </span>
         )}
         {pages.length > 0 && (
           <button

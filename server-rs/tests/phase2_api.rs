@@ -179,6 +179,21 @@ async fn sse_search_links_unlinked_mentions_and_graphs() {
         .await;
     let p1_id = p1["id"].as_str().unwrap();
 
+    // SSE replays wiki.created right after creating a wiki page
+    let (st, _, wiki_sse) = app
+        .raw_req(
+            Method::GET,
+            &format!("/api/projects/{pid}/events?since=0&once=true"),
+            Some(&tok),
+            None,
+            vec![],
+        )
+        .await;
+    assert_eq!(st, StatusCode::OK);
+    let wiki_sse_text = String::from_utf8_lossy(&wiki_sse);
+    assert!(wiki_sse_text.contains("event: wiki.created"), "sse: {wiki_sse_text}");
+    assert!(wiki_sse_text.contains(p1_id), "sse: {wiki_sse_text}");
+
     let (_, p2) = app
         .req(
             Method::POST,

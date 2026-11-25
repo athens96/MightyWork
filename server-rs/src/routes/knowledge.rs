@@ -297,6 +297,13 @@ async fn link_unlinked_mentions(
                 doc.updated_by = user.id.clone();
                 doc.updated_at = utcnow();
                 state.db.wiki_pages.update(&doc)?;
+                crate::services::events::publish_event(
+                    &state.db,
+                    &state.events,
+                    &access.project.id,
+                    "wiki.updated",
+                    serde_json::json!({ "page_id": doc.id }),
+                );
             }
             count
         } else {
