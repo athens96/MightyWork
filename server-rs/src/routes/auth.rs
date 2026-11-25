@@ -39,7 +39,10 @@ async fn login_with_google(
 ) -> ApiResult<Response> {
     let identity = (state.google_verifier)(&body.credential, &state.settings.google_client_id)
         .await
-        .map_err(|_| ApiError::unauthorized("Invalid Google credential"))?;
+        .map_err(|e| {
+            tracing::warn!(error = %e, "Google ID token verification failed");
+            ApiError::unauthorized("Invalid Google credential")
+        })?;
 
     if !identity.email_verified {
         return Err(ApiError::forbidden("Email not verified"));

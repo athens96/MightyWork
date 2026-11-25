@@ -1,5 +1,7 @@
 const BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? "") + "/api";
 const TOKEN_KEY = "mightywork.token";
+const SKIP_REFRESH_PATHS = new Set(["/auth/google", "/auth/refresh", "/auth/logout"]);
+const DEFAULT_REQUEST_TIMEOUT_MS = 20_000;
 
 export const tokenStorage = {
   get: () => localStorage.getItem(TOKEN_KEY),
@@ -53,7 +55,7 @@ export async function fetchWithAuth(path: string, init: RequestInit = {}): Promi
   };
 
   let res = await send(tokenStorage.get());
-  if (res.status === 401 && !path.startsWith("/auth/")) {
+  if (res.status === 401 && !SKIP_REFRESH_PATHS.has(path)) {
     const nextToken = await tryRefresh();
     if (nextToken) {
       res = await send(nextToken);
@@ -67,12 +69,23 @@ export async function fetchWithAuth(path: string, init: RequestInit = {}): Promi
 }
 
 export async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const res = await fetchWithAuth(path, init);
-  if (!res.ok) {
-    const body = await res.json().catch(() => null);
-    throw new ApiError(res.status, body?.detail ?? res.statusText);
+  let timer: number | undefined;
+  let nextInit = init;
+  if (!init.signal && !(init.body instanceof FormData) && typeof AbortController !== "undefined") {
+    const controller = new AbortController();
+    timer = window.setTimeout(() => controller.abort(), DEFAULT_REQUEST_TIMEOUT_MS);
+    nextInit = { ...init, signal: controller.signal };
   }
-  return (res.status === 204 ? undefined : await res.json()) as T;
+  try {
+    const res = await fetchWithAuth(path, nextInit);
+    if (!res.ok) {
+      const body = await res.json().catch(() => null);
+      throw new ApiError(res.status, body?.detail ?? res.statusText);
+    }
+    return (res.status === 204 ? undefined : await res.json()) as T;
+  } finally {
+    if (timer !== undefined) window.clearTimeout(timer);
+  }
 }
 
 export const http = {

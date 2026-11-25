@@ -36,10 +36,11 @@ pub struct AppState {
 
 impl AppState {
     pub fn new(settings: Settings, db: Database) -> Self {
+        let initial_seq = db.latest_event_seq().unwrap_or(0);
         Self {
             settings: Arc::new(settings),
             db,
-            events: EventBus::new(),
+            events: EventBus::with_seq(initial_seq),
             google_verifier: default_google_verifier(),
             webhook_sender: None,
         }

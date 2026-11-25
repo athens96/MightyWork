@@ -58,8 +58,15 @@ export function parseSSEBuffer(buffer: string): { messages: SSEMessage[]; rest: 
   return { messages, rest };
 }
 
+export interface SSEOptions {
+  /** 백그라운드(hidden) 탭에서 지정 ms 경과 시 SSE 연결을 일시 중지해 HTTP/1.1 연결 고갈 방지 (0 이면 비활성화, 기본 5000ms) */
+  pauseWhenHiddenMs?: number;
+}
+
+const DEFAULT_HIDDEN_PAUSE_MS = 5_000;
+
 /**
- * Bearer 인증 + 401 자동 리프레시 + 지수 백오프 재연결을 지원하는 SSE 구독기.
+ * Bearer 인증 + 401 자동 리프레시 + 지수 백오프 재연결 + 백그라운드 탭 절전을 지원하는 SSE 구독기.
  * 반환 함수를 호출하면 즉시 스트림을 종료한다.
  */
 export function subscribeSSE(
@@ -67,31 +74,63 @@ export function subscribeSSE(
   onMessage: (msg: SSEMessage) => void,
   onStatus?: (status: SSEStatus) => void,
   onReconnect?: () => void,
+  options: SSEOptions = {},
 ): () => void {
+  const pauseWhenHiddenMs = options.pauseWhenHiddenMs ?? DEFAULT_HIDDEN_PAUSE_MS;
   let closed = false;
   let hasConnectedOnce = false;
+  let pausedForHidden = false;
   let lastEventId: string | undefined;
   let retryMs = 1000;
   let timer: number | undefined;
+  let hideTimer: number | undefined;
   let controller: AbortController | null = null;
+
+  const isHidden = () =>
+    pauseWhenHiddenMs > 0 && typeof document !== "undefined" && document.visibilityState === "hidden";
+
+  const clearTimers = () => {
+    if (timer !== undefined) {
+      window.clearTimeout(timer);
+      timer = undefined;
+    }
+    if (hideTimer !== undefined) {
+      window.clearTimeout(hideTimer);
+      hideTimer = undefined;
+    }
+  };
 
   const scheduleReconnect = () => {
     if (closed) return;
+    if (isHidden()) {
+      pausedForHidden = true;
+      return;
+    }
     onStatus?.("reconnecting");
     const delay = retryMs;
     retryMs = Math.min(retryMs * 2, 15000);
-    timer = window.setTimeout(connect, delay);
+    timer = window.setTimeout(() => {
+      timer = undefined;
+      void connect();
+    }, delay);
   };
 
   const connect = async () => {
     if (closed) return;
-    controller = new AbortController();
+    if (isHidden()) {
+      pausedForHidden = true;
+      return;
+    }
+    pausedForHidden = false;
+    controller?.abort();
+    const myController = new AbortController();
+    controller = myController;
     const headers: Record<string, string> = { Accept: "text/event-stream" };
     if (lastEventId) headers["Last-Event-ID"] = lastEventId;
 
     try {
-      const res = await fetchWithAuth(path, { method: "GET", headers, signal: controller.signal });
-      if (closed) return;
+      const res = await fetchWithAuth(path, { method: "GET", headers, signal: myController.signal });
+      if (closed || controller !== myController) return;
       if (!res.ok || !res.body) {
         if (res.status === 401 || res.status === 403 || res.status === 404) return;
         scheduleReconnect();
@@ -108,7 +147,7 @@ export function subscribeSSE(
       const decoder = new TextDecoder();
       let buffer = "";
 
-      while (!closed) {
+      while (!closed && controller === myController) {
         const { done, value } = await reader.read();
         if (done) break;
         buffer += decoder.decode(value, { stream: true });
@@ -119,34 +158,71 @@ export function subscribeSSE(
           if (msg.event !== "connected") onMessage(msg);
         }
       }
-      if (!closed) scheduleReconnect();
+      if (!closed && controller === myController && !pausedForHidden) scheduleReconnect();
     } catch (e) {
-      if (closed || (e instanceof DOMException && e.name === "AbortError")) return;
+      if (closed || pausedForHidden || controller !== myController || (e instanceof DOMException && e.name === "AbortError")) return;
       scheduleReconnect();
     }
   };
 
-  const reconnectNow = () => {
+  const resumeIfNeeded = () => {
     if (closed) return;
-    if (timer) {
+    if (hideTimer !== undefined) {
+      window.clearTimeout(hideTimer);
+      hideTimer = undefined;
+    }
+    if (pausedForHidden) {
+      pausedForHidden = false;
+      retryMs = 1000;
+      void connect();
+      return;
+    }
+    if (timer !== undefined) {
       window.clearTimeout(timer);
       timer = undefined;
       retryMs = 1000;
-      connect();
+      void connect();
     }
   };
-  const onVisible = () => {
-    if (document.visibilityState === "visible") reconnectNow();
+
+  const onVisibilityChange = () => {
+    if (closed) return;
+    if (document.visibilityState === "visible") {
+      resumeIfNeeded();
+    } else if (pauseWhenHiddenMs > 0) {
+      if (hideTimer !== undefined) window.clearTimeout(hideTimer);
+      hideTimer = window.setTimeout(() => {
+        hideTimer = undefined;
+        if (closed || document.visibilityState !== "hidden") return;
+        pausedForHidden = true;
+        if (timer !== undefined) {
+          window.clearTimeout(timer);
+          timer = undefined;
+        }
+        controller?.abort();
+        controller = null;
+      }, pauseWhenHiddenMs);
+    }
   };
-  window.addEventListener("online", reconnectNow);
-  document.addEventListener("visibilitychange", onVisible);
-  connect();
+
+  const onOnline = () => {
+    if (!isHidden()) resumeIfNeeded();
+  };
+
+  window.addEventListener("online", onOnline);
+  document.addEventListener("visibilitychange", onVisibilityChange);
+  if (isHidden()) {
+    pausedForHidden = true;
+  } else {
+    void connect();
+  }
 
   return () => {
     closed = true;
-    window.removeEventListener("online", reconnectNow);
-    document.removeEventListener("visibilitychange", onVisible);
-    if (timer) window.clearTimeout(timer);
+    window.removeEventListener("online", onOnline);
+    document.removeEventListener("visibilitychange", onVisibilityChange);
+    clearTimers();
     controller?.abort();
+    controller = null;
   };
 }

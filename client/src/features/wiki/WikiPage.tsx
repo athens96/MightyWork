@@ -20,7 +20,8 @@ import { extractHeadings } from "../../lib/markdownHelpers";
 import { clearDraft, loadDraft, saveDraft, useBeforeUnloadWarning, type SavedDraft } from "../../lib/draftStorage";
 import { can } from "../../lib/permissions";
 import { recordRecent, removeBookmark, togglePin, useNavBookmarks } from "../../lib/recentsAndPins";
-import { PROJECT_EVENT, subscribeSSE, type ProjectEventDetail, type SSEStatus } from "../../lib/sse";
+import type { ProjectEventDetail } from "../../lib/sse";
+import { useProjectSSE } from "../../lib/useProjectSSE";
 import { extractImageFile, insertUploadedImage } from "../../lib/editorUpload";
 import { timeAgo, todayYmd } from "../../lib/time";
 import { useAutoRefresh } from "../../lib/useAutoRefresh";
@@ -67,7 +68,6 @@ export function WikiPage() {
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [selectionPop, setSelectionPop] = useState<{ text: string; top: number; left: number } | null>(null);
   const [createdNotice, setCreatedNotice] = useState<{ id: string; key: string; title: string } | null>(null);
-  const [liveStatus, setLiveStatus] = useState<SSEStatus>("reconnecting");
   const mdWrapRef = useRef<HTMLDivElement>(null);
   const editingRef = useRef(editing);
   editingRef.current = editing;
@@ -244,79 +244,88 @@ export function WikiPage() {
   const sseHandlersRef = useRef({ reloadTree, reloadActivePage, reloadLinks, reloadAll, markUpdated });
   sseHandlersRef.current = { reloadTree, reloadActivePage, reloadLinks, reloadAll, markUpdated };
 
-  // MW-39: 위키 실시간 프로젝트 SSE 구독 + 재연결 시 전체 동기화
+  // MW-39 & MW-40: Layout 의 단일 프로젝트 SSE 스트림을 공유 구독 + 재연결 시 전체 동기화
+  const sseTimersRef = useRef<{
+    wiki?: number;
+    link?: number;
+    pendingTree: boolean;
+    pendingPage: boolean;
+    pendingLinks: boolean;
+  }>({ pendingTree: false, pendingPage: false, pendingLinks: false });
+
   useEffect(() => {
-    let wikiTimer: number | undefined;
-    let linkTimer: number | undefined;
-    let pendingTree = false;
-    let pendingPage = false;
-    let pendingLinks = false;
-    const stop = subscribeSSE(
-      `/projects/${project.id}/events`,
-      (msg) => {
-        window.dispatchEvent(
-          new CustomEvent<ProjectEventDetail>(PROJECT_EVENT, {
-            detail: { projectId: project.id, event: msg.event, data: msg.data },
-          }),
-        );
-        const h = sseHandlersRef.current;
-        const activeId = pageIdRef.current;
-        const plan = planWikiRefresh(msg.event, msg.data, activeId);
-
-        if (plan.comments && activeId) {
-          wikiApi.listComments(project.id, activeId).then((list) => {
-            if (pageIdRef.current === activeId) {
-              setComments(list);
-              h.markUpdated();
-            }
-          }, () => {});
-          return;
-        }
-
-        if (plan.tree || plan.page) {
-          pendingTree = pendingTree || plan.tree;
-          pendingPage = pendingPage || plan.page;
-          pendingLinks = pendingLinks || plan.links;
-          if (wikiTimer) window.clearTimeout(wikiTimer);
-          wikiTimer = window.setTimeout(() => {
-            const needTree = pendingTree;
-            const needPage = pendingPage;
-            const needLinks = pendingLinks;
-            pendingTree = false;
-            pendingPage = false;
-            pendingLinks = false;
-            const latestH = sseHandlersRef.current;
-            const jobs: Promise<unknown>[] = [];
-            if (needTree) jobs.push(latestH.reloadTree());
-            const curId = pageIdRef.current;
-            if (curId && needPage) jobs.push(latestH.reloadActivePage(curId));
-            if (curId && needLinks) jobs.push(latestH.reloadLinks(curId));
-            if (jobs.length > 0) void Promise.all(jobs).then(latestH.markUpdated, () => {});
-          }, 150);
-          return;
-        }
-
-        if (plan.links && activeId) {
-          if (linkTimer) window.clearTimeout(linkTimer);
-          linkTimer = window.setTimeout(() => {
-            const curId = pageIdRef.current;
-            const latestH = sseHandlersRef.current;
-            if (curId) void latestH.reloadLinks(curId).then(latestH.markUpdated, () => {});
-          }, 250);
-        }
-      },
-      setLiveStatus,
-      () => {
-        const h = sseHandlersRef.current;
-        void h.reloadAll().then(h.markUpdated, () => {});
-      },
-    );
+    const t = sseTimersRef.current;
     return () => {
-      if (wikiTimer) window.clearTimeout(wikiTimer);
-      if (linkTimer) window.clearTimeout(linkTimer);
-      stop();
+      if (t.wiki) window.clearTimeout(t.wiki);
+      if (t.link) window.clearTimeout(t.link);
+      t.wiki = undefined;
+      t.link = undefined;
+      t.pendingTree = false;
+      t.pendingPage = false;
+      t.pendingLinks = false;
     };
   }, [project.id]);
+
+  const handleWikiProjectEvent = useCallback(
+    (msg: ProjectEventDetail) => {
+      const h = sseHandlersRef.current;
+      const t = sseTimersRef.current;
+      const activeId = pageIdRef.current;
+      const plan = planWikiRefresh(msg.event, msg.data, activeId);
+
+      if (plan.comments && activeId) {
+        wikiApi.listComments(project.id, activeId).then((list) => {
+          if (pageIdRef.current === activeId) {
+            setComments(list);
+            h.markUpdated();
+          }
+        }, () => {});
+        return;
+      }
+
+      if (plan.tree || plan.page) {
+        t.pendingTree = t.pendingTree || plan.tree;
+        t.pendingPage = t.pendingPage || plan.page;
+        t.pendingLinks = t.pendingLinks || plan.links;
+        if (t.wiki) window.clearTimeout(t.wiki);
+        t.wiki = window.setTimeout(() => {
+          const needTree = t.pendingTree;
+          const needPage = t.pendingPage;
+          const needLinks = t.pendingLinks;
+          t.pendingTree = false;
+          t.pendingPage = false;
+          t.pendingLinks = false;
+          t.wiki = undefined;
+          const latestH = sseHandlersRef.current;
+          const jobs: Promise<unknown>[] = [];
+          if (needTree) jobs.push(latestH.reloadTree());
+          const curId = pageIdRef.current;
+          if (curId && needPage) jobs.push(latestH.reloadActivePage(curId));
+          if (curId && needLinks) jobs.push(latestH.reloadLinks(curId));
+          if (jobs.length > 0) void Promise.all(jobs).then(latestH.markUpdated, () => {});
+        }, 150);
+        return;
+      }
+
+      if (plan.links && activeId) {
+        if (t.link) window.clearTimeout(t.link);
+        t.link = window.setTimeout(() => {
+          t.link = undefined;
+          const curId = pageIdRef.current;
+          const latestH = sseHandlersRef.current;
+          if (curId) void latestH.reloadLinks(curId).then(latestH.markUpdated, () => {});
+        }, 250);
+      }
+    },
+    [project.id],
+  );
+
+  const handleWikiProjectReconnect = useCallback(() => {
+    const h = sseHandlersRef.current;
+    void h.reloadAll().then(h.markUpdated, () => {});
+  }, []);
+
+  const liveStatus = useProjectSSE(project.id, handleWikiProjectEvent, handleWikiProjectReconnect);
 
   // 링크 안 된 언급 → [[링크]] 로 바꾸기 (편집 권한)
   const linkMentions = async (sources: UnlinkedMention[]) => {

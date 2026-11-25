@@ -18,6 +18,8 @@ export function ProjectsProvider({ children }: { children: ReactNode }) {
   const reload = useCallback(async () => {
     try {
       setProjects(await projectsApi.list());
+    } catch {
+      // 일시적 네트워크/타임아웃 오류 시 기존 목록 유지
     } finally {
       setLoading(false);
     }

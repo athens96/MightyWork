@@ -4,7 +4,8 @@ import { notificationsApi } from "../api";
 import { useAuth } from "../auth/AuthContext";
 import { useProjects } from "../features/projects/ProjectsContext";
 import { removePin, useNavBookmarks } from "../lib/recentsAndPins";
-import { subscribeSSE } from "../lib/sse";
+import { PROJECT_EVENT, subscribeSSE, type ProjectEventDetail } from "../lib/sse";
+import { publishProjectSSEReconnect, publishSSEStatus } from "../lib/useProjectSSE";
 import { APP_VERSION } from "../lib/version";
 import { OPEN_VERSION_MODAL_EVENT, VERSION_AVAILABLE_EVENT } from "../lib/versionCheck";
 import { useTheme } from "../theme";
@@ -40,13 +41,25 @@ export function Layout() {
   useEffect(() => {
     if (!user) return;
     const fetchUnread = () => notificationsApi.list(true).then((r) => setUnread(r.unread_count), () => {});
+    const ssePath = activeProjectId ? `/projects/${activeProjectId}/events` : "/events";
+    publishSSEStatus(activeProjectId, "reconnecting");
     const stopSSE = subscribeSSE(
-      "/events",
+      ssePath,
       (msg) => {
         if (msg.event === "notification.created") fetchUnread();
+        if (activeProjectId) {
+          window.dispatchEvent(
+            new CustomEvent<ProjectEventDetail>(PROJECT_EVENT, {
+              detail: { projectId: activeProjectId, event: msg.event, data: msg.data },
+            }),
+          );
+        }
       },
-      undefined,
-      fetchUnread,
+      (status) => publishSSEStatus(activeProjectId, status),
+      () => {
+        fetchUnread();
+        if (activeProjectId) publishProjectSSEReconnect(activeProjectId);
+      },
     );
     const id = window.setInterval(() => {
       if (document.visibilityState === "visible" && navigator.onLine !== false) fetchUnread();
@@ -54,8 +67,9 @@ export function Layout() {
     return () => {
       window.clearInterval(id);
       stopSSE();
+      publishSSEStatus(undefined, "reconnecting");
     };
-  }, [user?.id]);
+  }, [user?.id, activeProjectId]);
 
   useEffect(() => {
     const onVer = (e: Event) => {

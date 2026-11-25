@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { parseSSEBuffer } from "./sse";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { parseSSEBuffer, subscribeSSE } from "./sse";
 
 describe("parseSSEBuffer", () => {
   it("parses complete frames, ignores comments, and preserves trailing remainder", () => {
@@ -26,5 +26,55 @@ describe("parseSSEBuffer", () => {
       { id: "8", event: "comment.created", data: { task_id: "t1", comment_id: "c1" } },
     ]);
     expect(second.rest).toBe("");
+  });
+});
+
+describe("subscribeSSE hidden-tab pause", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("defers connecting when started in a hidden tab and connects once visible", async () => {
+    const winListeners = new Map<string, Set<EventListener>>();
+    const docListeners = new Map<string, Set<EventListener>>();
+    let visibilityState: DocumentVisibilityState = "hidden";
+
+    const fakeWindow = {
+      setTimeout: globalThis.setTimeout.bind(globalThis),
+      clearTimeout: globalThis.clearTimeout.bind(globalThis),
+      addEventListener: (k: string, fn: EventListener) => {
+        if (!winListeners.has(k)) winListeners.set(k, new Set());
+        winListeners.get(k)!.add(fn);
+      },
+      removeEventListener: (k: string, fn: EventListener) => winListeners.get(k)?.delete(fn),
+      dispatchEvent: vi.fn(),
+    };
+    const fakeDocument = {
+      get visibilityState() {
+        return visibilityState;
+      },
+      addEventListener: (k: string, fn: EventListener) => {
+        if (!docListeners.has(k)) docListeners.set(k, new Set());
+        docListeners.get(k)!.add(fn);
+      },
+      removeEventListener: (k: string, fn: EventListener) => docListeners.get(k)?.delete(fn),
+    };
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 401 }));
+
+    vi.stubGlobal("window", fakeWindow);
+    vi.stubGlobal("document", fakeDocument);
+    vi.stubGlobal("localStorage", { getItem: () => null, setItem: () => {}, removeItem: () => {} });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const stop = subscribeSSE("/events", () => {});
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    visibilityState = "visible";
+    docListeners.get("visibilitychange")?.forEach((fn) => fn(new Event("visibilitychange")));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    stop();
   });
 });

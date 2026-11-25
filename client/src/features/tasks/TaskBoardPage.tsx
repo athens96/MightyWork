@@ -8,7 +8,8 @@ import { useAuth } from "../../auth/AuthContext";
 import { ChevronIcon, CloseIcon, PlusIcon, SearchIcon } from "../../components/icons";
 import { TASK_CREATED_EVENT } from "../../components/QuickCreateModal";
 import { RefreshButton } from "../../components/RefreshButton";
-import { PROJECT_EVENT, subscribeSSE, type ProjectEventDetail, type SSEStatus } from "../../lib/sse";
+import type { ProjectEventDetail } from "../../lib/sse";
+import { useProjectSSE } from "../../lib/useProjectSSE";
 import {
   groupTasks,
   matchesQuickQuery,
@@ -77,7 +78,6 @@ export function TaskBoardPage() {
   const [newTitle, setNewTitle] = useState("");
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dropStage, setDropStage] = useState<PipelineStage | null>(null);
-  const [liveStatus, setLiveStatus] = useState<SSEStatus>("reconnecting");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [bulkTag, setBulkTag] = useState("");
   const [bulkVersion, setBulkVersion] = useState("");
@@ -251,52 +251,47 @@ export function TaskBoardPage() {
     return () => window.removeEventListener(TASK_CREATED_EVENT, onQuick);
   }, [project.id, markUpdated]);
 
-  // MW-5 & MW-14: SSE 실시간 프로젝트 스트림 구독 + 재연결 시 전체 동기화
+  // MW-5 & MW-14 & MW-40: Layout 의 단일 프로젝트 SSE 스트림을 공유 구독 + 재연결 시 전체 동기화
+  const sseRefreshTimerRef = useRef<number | undefined>(undefined);
   useEffect(() => {
-    let refreshTimer: number | undefined;
-    const stop = subscribeSSE(
-      `/projects/${project.id}/events`,
-      (msg) => {
-        window.dispatchEvent(
-          new CustomEvent<ProjectEventDetail>(PROJECT_EVENT, {
-            detail: { projectId: project.id, event: msg.event, data: msg.data },
-          }),
-        );
-        if (msg.event === "pipeline.updated") {
-          pipelineApi.forProject(project.id).then((p) => {
-            setStages(p);
+    return () => {
+      if (sseRefreshTimerRef.current) window.clearTimeout(sseRefreshTimerRef.current);
+    };
+  }, [project.id]);
+
+  const handleProjectEvent = useCallback(
+    (msg: ProjectEventDetail) => {
+      if (msg.event === "pipeline.updated") {
+        pipelineApi.forProject(project.id).then((p) => {
+          setStages(p);
+          markUpdated();
+        }, () => {});
+      }
+      if (msg.event === "cycle.updated") {
+        cyclesApi.list(project.id).then(setCycles, () => {});
+      }
+      if (msg.event === "milestone.updated") {
+        milestonesApi.list(project.id).then(setMilestones, () => {});
+      }
+      if (msg.event === "triage.updated") {
+        triageApi.list(project.id).then((tr) => setTriageCount(tr.filter((x) => x.triage_status === "pending").length), () => {});
+      }
+      if (msg.event.startsWith("task.") || msg.event.startsWith("comment.") || msg.event === "github.linked") {
+        if (sseRefreshTimerRef.current) window.clearTimeout(sseRefreshTimerRef.current);
+        sseRefreshTimerRef.current = window.setTimeout(() => {
+          tasksApi.list(project.id).then((list) => {
+            setTasks(list);
             markUpdated();
           }, () => {});
-        }
-        if (msg.event === "cycle.updated") {
-          cyclesApi.list(project.id).then(setCycles, () => {});
-        }
-        if (msg.event === "milestone.updated") {
-          milestonesApi.list(project.id).then(setMilestones, () => {});
-        }
-        if (msg.event === "triage.updated") {
-          triageApi.list(project.id).then((tr) => setTriageCount(tr.filter((x) => x.triage_status === "pending").length), () => {});
-        }
-        if (msg.event.startsWith("task.") || msg.event.startsWith("comment.") || msg.event === "github.linked") {
-          if (refreshTimer) window.clearTimeout(refreshTimer);
-          refreshTimer = window.setTimeout(() => {
-            tasksApi.list(project.id).then((list) => {
-              setTasks(list);
-              markUpdated();
-            }, () => {});
-          }, 150);
-        }
-      },
-      setLiveStatus,
-      () => {
-        void reload().then(markUpdated, () => {});
-      },
-    );
-    return () => {
-      if (refreshTimer) window.clearTimeout(refreshTimer);
-      stop();
-    };
-  }, [project.id, reload, markUpdated]);
+        }, 150);
+      }
+    },
+    [project.id, markUpdated],
+  );
+  const handleProjectReconnect = useCallback(() => {
+    void reload().then(markUpdated, () => {});
+  }, [reload, markUpdated]);
+  const liveStatus = useProjectSSE(project.id, handleProjectEvent, handleProjectReconnect);
 
   const usersById = useMemo(() => new Map(users.map((u) => [u.id, u])), [users]);
   const allTags = useMemo(() => [...new Set(tasks.flatMap((t) => t.tags))].sort((a, b) => a.localeCompare(b)), [tasks]);

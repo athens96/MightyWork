@@ -79,41 +79,46 @@ fn spawn_stream(
         }
 
         let mut last_ping = Instant::now();
-        let poll_interval = Duration::from_millis(600);
         let keepalive_sec = Duration::from_secs(20);
 
         loop {
             if tx.is_closed() {
                 break;
             }
-            let events = state
-                .db
-                .fetch_events(&channels, cursor, 200)
-                .unwrap_or_default();
-            if !events.is_empty() {
-                for (seq, kind, payload) in events {
-                    cursor = seq;
-                    let ev = Event::default()
-                        .event(kind)
-                        .id(seq.to_string())
-                        .data(payload.to_string());
-                    if tx.send(Ok(ev)).await.is_err() {
-                        return;
+            let observed = state.events.latest_seq();
+            if observed > cursor {
+                let events = state
+                    .db
+                    .fetch_events(&channels, cursor, 200)
+                    .unwrap_or_default();
+                if !events.is_empty() {
+                    for (seq, kind, payload) in events {
+                        cursor = cursor.max(seq);
+                        let ev = Event::default()
+                            .event(kind)
+                            .id(seq.to_string())
+                            .data(payload.to_string());
+                        if tx.send(Ok(ev)).await.is_err() {
+                            return;
+                        }
                     }
+                    last_ping = Instant::now();
+                    continue;
                 }
-                last_ping = Instant::now();
-                continue;
+                cursor = cursor.max(observed);
             }
-            if last_ping.elapsed() >= keepalive_sec {
+            let remaining = keepalive_sec.saturating_sub(last_ping.elapsed());
+            if remaining.is_zero() {
                 if tx.send(Ok(Event::default().comment("keepalive"))).await.is_err() {
                     return;
                 }
                 last_ping = Instant::now();
+                continue;
             }
             tokio::select! {
                 _ = tx.closed() => break,
                 _ = bus_rx.recv() => {},
-                _ = tokio::time::sleep(poll_interval) => {},
+                _ = tokio::time::sleep(remaining) => {},
             }
         }
     });
