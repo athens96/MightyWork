@@ -235,7 +235,14 @@ export function TaskListView({
             <td colSpan={colSpan}>
               <button type="button" className="list-bucket-btn" aria-expanded={open} onClick={() => toggleBucket(bKey)}>
                 <ChevronIcon size={11} className={open ? "is-open" : ""} />
-                <span>{bucket.label} 완료</span>
+                {bucket.kind === "version" ? (
+                  <>
+                    <span className="version-badge">{bucket.label}</span>
+                    <span>완료</span>
+                  </>
+                ) : (
+                  <span>{bucket.label} 완료</span>
+                )}
                 <span className="pill tone-done">{bucket.tasks.length}건</span>
                 <span className="muted" style={{ fontSize: 11 }}>
                   {open ? "접기" : "펼쳐 보기"}
@@ -296,7 +303,9 @@ export function TaskListView({
                           <span className="mono muted">{totalCount}건</span>
                           {g.isDoneGroup && extraDoneCount > 0 && (
                             <span className="muted" style={{ fontSize: 11 }}>
-                              (이번 달 {g.tasks.length} · 이전 {extraDoneCount} 묶음)
+                              {doneMode === "version"
+                                ? `(버전 ${doneBuckets.length}개 묶음)`
+                                : `(이번 달 ${g.tasks.length} · 이전 ${extraDoneCount} 묶음)`}
                             </span>
                           )}
                         </button>
@@ -317,7 +326,7 @@ export function TaskListView({
                     <td colSpan={colSpan}>
                       <div className="list-group-btn" style={{ cursor: "default" }}>
                         <span className="dot" />
-                        <strong>이전 기간 완료 묶음</strong>
+                        <strong>{doneMode === "version" ? "완료 (버전별 묶음)" : "이전 기간 완료 묶음"}</strong>
                         <span className="mono muted">{doneBuckets.reduce((s, b) => s + b.tasks.length, 0)}건</span>
                       </div>
                     </td>

@@ -74,6 +74,26 @@ describe("partitionDoneByMonth", () => {
     expect(res.expanded.map((t) => t.number)).toEqual([5, 4, 3, 2, 1]);
     expect(res.buckets).toEqual([]);
   });
+
+  it("version 모드는 완료 일감을 최신 버전순 아코디언으로 묶고 미지정은 하단에 배치한다", () => {
+    const versionedTasks: Task[] = [
+      makeTask({ number: 1, version: "v0.5.9", updated_at: "2026-11-10T10:00:00+09:00" }),
+      makeTask({ number: 2, version: "v0.5.10", updated_at: "2026-11-12T10:00:00+09:00" }),
+      makeTask({ number: 3, version: "v0.6.0", updated_at: "2026-11-20T10:00:00+09:00" }),
+      makeTask({ number: 4, version: "v0.5.10", updated_at: "2026-11-18T10:00:00+09:00" }),
+      makeTask({ number: 5, version: null, updated_at: "2026-11-21T10:00:00+09:00" }),
+    ];
+    const res = partitionDoneByMonth(versionedTasks, "version", now);
+    expect(res.expanded).toEqual([]);
+    expect(res.expandedLabel).toBe("");
+    expect(res.hiddenCount).toBe(0);
+    expect(res.buckets.map((b) => ({ key: b.key, label: b.label, kind: b.kind, nums: b.tasks.map((t) => t.number) }))).toEqual([
+      { key: "ver:v0.6.0", label: "v0.6.0", kind: "version", nums: [3] },
+      { key: "ver:v0.5.10", label: "v0.5.10", kind: "version", nums: [4, 2] },
+      { key: "ver:v0.5.9", label: "v0.5.9", kind: "version", nums: [1] },
+      { key: "ver:__none__", label: "버전 미지정", kind: "unversioned", nums: [5] },
+    ]);
+  });
 });
 
 describe("matchesQuickQuery & matchesStageGroup & formatMonthLabel", () => {

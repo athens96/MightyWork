@@ -43,10 +43,28 @@ export function TaskDetailRoute() {
 type ViewLayout = "board" | "list" | "timeline";
 type SortKey = "number" | "updated" | "priority" | "due";
 const PRIO_RANK: Record<Priority, number> = { urgent: 0, high: 1, medium: 2, low: 3 };
-const VALID_DONE_MODES: readonly DoneDisplayMode[] = ["monthly", "recent7", "hide", "all"];
+const VALID_DONE_MODES: readonly DoneDisplayMode[] = ["version", "monthly", "recent7", "hide", "all"];
 const VALID_GROUPS: readonly GroupBy[] = ["none", "stage", "priority", "version", "assignee", "milestone", "cycle"];
 const COL_PAGE_SIZE = 12;
 const DENSITY_KEY = "mw:board-density";
+
+function loadSavedDoneMode(projectId: string): DoneDisplayMode | null {
+  try {
+    const raw = localStorage.getItem(`mw:done-mode:${projectId}`) as DoneDisplayMode | null;
+    return raw && VALID_DONE_MODES.includes(raw) ? raw : null;
+  } catch {
+    return null;
+  }
+}
+
+function persistDoneMode(projectId: string, mode: DoneDisplayMode | null) {
+  try {
+    if (mode) localStorage.setItem(`mw:done-mode:${projectId}`, mode);
+    else localStorage.removeItem(`mw:done-mode:${projectId}`);
+  } catch {
+    // ignore storage quota errors
+  }
+}
 
 function loadCollapsedCols(projectId: string): Set<PipelineStage> {
   try {
@@ -92,6 +110,7 @@ export function TaskBoardPage() {
     }
   });
   const [collapsedCols, setCollapsedCols] = useState<Set<PipelineStage>>(() => loadCollapsedCols(project.id));
+  const [savedDoneMode, setSavedDoneMode] = useState<DoneDisplayMode | null>(() => loadSavedDoneMode(project.id));
   const [expandedMonths, setExpandedMonths] = useState<Set<string>>(() => new Set());
   const [expandedLongCols, setExpandedLongCols] = useState<Set<string>>(() => new Set());
   const [collapsedLanes, setCollapsedLanes] = useState<Set<string>>(() => new Set());
@@ -103,6 +122,7 @@ export function TaskBoardPage() {
 
   useEffect(() => {
     setCollapsedCols(loadCollapsedCols(project.id));
+    setSavedDoneMode(loadSavedDoneMode(project.id));
     setExpandedMonths(new Set());
     setExpandedLongCols(new Set());
     setCollapsedLanes(new Set());
@@ -143,6 +163,17 @@ export function TaskBoardPage() {
     });
   };
 
+  const setBucketsExpanded = (keys: string[], expand: boolean) => {
+    setExpandedMonths((prev) => {
+      const next = new Set(prev);
+      for (const k of keys) {
+        if (expand) next.add(k);
+        else next.delete(k);
+      }
+      return next;
+    });
+  };
+
   const toggleLongCol = (key: string) => {
     setExpandedLongCols((prev) => {
       const next = new Set(prev);
@@ -172,8 +203,11 @@ export function TaskBoardPage() {
   const sort = (params.get("sort") as SortKey) || "number";
   const quickQuery = params.get("q") || "";
   const stageGroup = (params.get("sg") as StageGroupKey) || "";
+  const hasVersionedDone = useMemo(() => tasks.some((t) => t.stage === "done" && Boolean(t.version?.trim())), [tasks]);
+  const autoDefaultDoneMode: DoneDisplayMode = hasVersionedDone ? "version" : "monthly";
   const rawDone = params.get("done") as DoneDisplayMode | null;
-  const doneMode: DoneDisplayMode = rawDone && VALID_DONE_MODES.includes(rawDone) ? rawDone : "monthly";
+  const validRawDone = rawDone && VALID_DONE_MODES.includes(rawDone) ? rawDone : null;
+  const doneMode: DoneDisplayMode = validRawDone ?? savedDoneMode ?? autoDefaultDoneMode;
   const rawGroup = params.get("group") as GroupBy | null;
   const validGroup = rawGroup && VALID_GROUPS.includes(rawGroup) ? rawGroup : null;
   const boardGroupBy: GroupBy = validGroup && validGroup !== "stage" ? validGroup : "none";
@@ -186,7 +220,7 @@ export function TaskBoardPage() {
       (key === "assignee" && val === "all") ||
       (key === "view" && val === "board") ||
       (key === "sort" && val === "number") ||
-      (key === "done" && val === "monthly") ||
+      (key === "done" && val === autoDefaultDoneMode) ||
       (key === "group" && ((layout === "board" && val === "none") || (layout === "list" && val === "stage")))
     ) {
       next.delete(key);
@@ -194,6 +228,12 @@ export function TaskBoardPage() {
       next.set(key, val);
     }
     setParams(next, { replace: true });
+  };
+
+  const setDoneMode = (mode: DoneDisplayMode) => {
+    setSavedDoneMode(mode);
+    persistDoneMode(project.id, mode);
+    setParam("done", mode);
   };
 
   const toggleStageGroup = (target: Exclude<StageGroupKey, "">) => {
@@ -371,7 +411,7 @@ export function TaskBoardPage() {
     !!versionFilter ||
     !!quickQuery ||
     !!stageGroup ||
-    doneMode !== "monthly" ||
+    doneMode !== autoDefaultDoneMode ||
     (layout === "board" ? boardGroupBy !== "none" : listGroupBy !== "stage");
 
   const visibleStages = useMemo(() => {
@@ -493,11 +533,20 @@ export function TaskBoardPage() {
     for (const stage of boardStages) {
       if (collapsedCols.has(stage.key)) continue;
       const col = visible.filter((t) => t.stage === stage.key);
-      const shown = stage.key === "done" ? partitionDoneByMonth(col, doneMode).expanded : col;
-      for (const t of shown) ids.push(t.id);
+      if (stage.key === "done") {
+        const part = partitionDoneByMonth(col, doneMode);
+        for (const t of part.expanded) ids.push(t.id);
+        for (const b of part.buckets) {
+          if (quickQuery.trim() || expandedMonths.has(`${stage.key}:${b.key}`)) {
+            for (const t of b.tasks) ids.push(t.id);
+          }
+        }
+      } else {
+        for (const t of col) ids.push(t.id);
+      }
     }
     return ids;
-  }, [layout, visible, boardStages, collapsedCols, doneMode, stageGroup]);
+  }, [layout, visible, boardStages, collapsedCols, doneMode, stageGroup, quickQuery, expandedMonths]);
 
   useEffect(() => {
     if (openTaskId || layout === "timeline") return;
@@ -668,6 +717,21 @@ export function TaskBoardPage() {
             {stage.wip_limit && !laneKey ? `${colTasks.length}/${stage.wip_limit}` : colTasks.length}
             {overWip && " !"}
           </span>
+          {stage.key === "done" && !(laneKey && boardGroupBy === "version") && (
+            <button
+              type="button"
+              className={`done-mode-toggle ${doneMode === "version" ? "is-active" : ""}`}
+              onClick={() => setDoneMode(doneMode === "version" ? "monthly" : "version")}
+              aria-pressed={doneMode === "version"}
+              title={
+                doneMode === "version"
+                  ? "완료 컬럼: 버전별 묶음 중 (클릭하여 월별로 전환)"
+                  : "완료 컬럼만 버전별로 묶어 보기"
+              }
+            >
+              버전별
+            </button>
+          )}
           {!laneKey && (
             <button
               type="button"
@@ -685,24 +749,42 @@ export function TaskBoardPage() {
 
         {donePartition ? (
           <>
-            {donePartition.buckets.length > 0 && (
+            {doneMode === "version" && donePartition.buckets.length > 0 && (() => {
+              const bucketKeys = donePartition.buckets.map((b) => `${colKey}:${b.key}`);
+              const allOpen = Boolean(quickQuery.trim()) || bucketKeys.every((k) => expandedMonths.has(k));
+              return (
+                <div className="done-subhead">
+                  <span>버전별 묶음 · {donePartition.buckets.length}개</span>
+                  {!quickQuery.trim() && (
+                    <button
+                      type="button"
+                      className="done-subhead-btn"
+                      onClick={() => setBucketsExpanded(bucketKeys, !allOpen)}
+                    >
+                      {allOpen ? "모두 접기" : "모두 펼치기"}
+                    </button>
+                  )}
+                </div>
+              );
+            })()}
+            {donePartition.buckets.length > 0 && donePartition.expandedLabel && (
               <div className="done-subhead">
                 <span>{donePartition.expandedLabel}</span>
                 <span className="mono">{donePartition.expanded.length}</span>
               </div>
             )}
-            {donePartition.expanded.length === 0 && donePartition.buckets.length > 0 && (
+            {donePartition.expanded.length === 0 && donePartition.buckets.length > 0 && donePartition.expandedLabel && (
               <div className="done-empty-note">해당 기간 완료 일감이 없습니다</div>
             )}
             {donePartition.expanded.map(renderCard)}
             {donePartition.buckets.map((bucket) => {
               const bKey = `${colKey}:${bucket.key}`;
-              const open = expandedMonths.has(bKey);
+              const open = Boolean(quickQuery.trim()) || expandedMonths.has(bKey);
               return (
-                <div key={bKey} className={`month-bucket ${open ? "is-open" : ""}`}>
+                <div key={bKey} className={`month-bucket ${bucket.kind === "version" ? "is-version" : ""} ${open ? "is-open" : ""}`}>
                   <button type="button" className="month-bucket-head" aria-expanded={open} onClick={() => toggleMonth(bKey)}>
                     <ChevronIcon size={11} className={open ? "is-open" : ""} />
-                    <span className="month-bucket-label">{bucket.label}</span>
+                    <span className={`month-bucket-label ${bucket.kind === "version" ? "mono" : ""}`}>{bucket.label}</span>
                     <span className="month-bucket-count mono">{bucket.tasks.length}건</span>
                   </button>
                   {open && <div className="month-bucket-body">{bucket.tasks.map(renderCard)}</div>}
@@ -839,10 +921,11 @@ export function TaskBoardPage() {
         <select
           className="filter-select"
           value={doneMode}
-          onChange={(e) => setParam("done", e.target.value)}
+          onChange={(e) => setDoneMode(e.target.value as DoneDisplayMode)}
           aria-label="완료 일감 표시 방식"
           title="완료 컬럼 정리 방식"
         >
+          <option value="version">완료: 버전별 묶음</option>
           <option value="monthly">완료: 이번 달 펼침 (이전 월 묶음)</option>
           <option value="recent7">완료: 최근 7일만 펼침</option>
           <option value="hide">완료: 모두 숨김 (진행 집중)</option>
@@ -907,7 +990,15 @@ export function TaskBoardPage() {
         </button>
 
         {hasFilters && (
-          <button type="button" className="btn btn-sm btn-ghost" onClick={() => setParams(layout === "board" ? {} : { view: layout }, { replace: true })}>
+          <button
+            type="button"
+            className="btn btn-sm btn-ghost"
+            onClick={() => {
+              setSavedDoneMode(null);
+              persistDoneMode(project.id, null);
+              setParams(layout === "board" ? {} : { view: layout }, { replace: true });
+            }}
+          >
             초기화
           </button>
         )}
@@ -1044,8 +1135,13 @@ export function TaskBoardPage() {
           {hiddenDoneCount > 0 && (
             <span className="conn-chip">
               완료 {hiddenDoneCount}건 숨김
-              <button type="button" className="link-btn" style={{ marginLeft: 4, color: "var(--accent)", fontWeight: 600 }} onClick={() => setParam("done", "monthly")}>
-                이번 달 보기
+              <button
+                type="button"
+                className="link-btn"
+                style={{ marginLeft: 4, color: "var(--accent)", fontWeight: 600 }}
+                onClick={() => setDoneMode(autoDefaultDoneMode)}
+              >
+                {autoDefaultDoneMode === "version" ? "버전별 보기" : "이번 달 보기"}
               </button>
             </span>
           )}

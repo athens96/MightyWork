@@ -1,20 +1,23 @@
 import type { Cycle, Milestone, PipelineStage, PipelineStageInfo, Priority, Task, User } from "../types";
 import { PRIORITY_LABEL, STAGE_TONE } from "../features/tasks/tones";
 
-export type DoneDisplayMode = "monthly" | "recent7" | "all" | "hide";
+export type DoneDisplayMode = "version" | "monthly" | "recent7" | "all" | "hide";
 export type GroupBy = "none" | "stage" | "priority" | "version" | "assignee" | "milestone" | "cycle";
 export type StageGroupKey = "" | "in_progress" | "review_qa" | "done" | "todo_backlog";
 
-export interface MonthBucket {
-  key: string; // "YYYY-MM" 또는 "YYYY-MM:older"
+export interface DoneBucket {
+  key: string; // "YYYY-MM" | "YYYY-MM:older" | "ver:<version>" | "ver:__none__"
   label: string;
   tasks: Task[];
+  kind?: "month" | "version" | "unversioned";
 }
+
+export type MonthBucket = DoneBucket;
 
 export interface DonePartition {
   expanded: Task[];
   expandedLabel: string;
-  buckets: MonthBucket[];
+  buckets: DoneBucket[];
   hiddenCount: number;
 }
 
@@ -114,8 +117,9 @@ function taskTimestamp(t: Task): number {
 }
 
 /**
- * 완료(done) 일감을 표시 모드에 따라 "바로 펼칠 항목"과 "월별 접힘 묶음"으로 분리.
- * - monthly (기본): 이번 달 완료분은 펼치고, 지난달 이전은 YYYY-MM 월별 아코디언으로 묶음
+ * 완료(done) 일감을 표시 모드에 따라 "바로 펼칠 항목"과 "접힘 묶음(버전별·월별)"으로 분리.
+ * - version: 버전별 최신순 접이식 아코디언으로 묶음 (미지정은 하단 '버전 미지정')
+ * - monthly: 이번 달 완료분은 펼치고, 지난달 이전은 YYYY-MM 월별 아코디언으로 묶음
  * - recent7: 최근 7일 완료분만 펼치고, 이전 항목은 월별 묶음
  * - all: 전체 펼침
  * - hide: 전체 숨김
@@ -130,6 +134,41 @@ export function partitionDoneByMonth(doneTasks: Task[], mode: DoneDisplayMode, n
 
   if (mode === "all") {
     return { expanded: sorted, expandedLabel: "전체 완료", buckets: [], hiddenCount: 0 };
+  }
+
+  if (mode === "version") {
+    const byVer = new Map<string, Task[]>();
+    const noVer: Task[] = [];
+    for (const task of sorted) {
+      const ver = task.version?.trim();
+      if (!ver) {
+        noVer.push(task);
+      } else {
+        const list = byVer.get(ver) ?? [];
+        list.push(task);
+        byVer.set(ver, list);
+      }
+    }
+    const buckets: DoneBucket[] = sortVersionLabels([...byVer.keys()]).map((ver) => ({
+      key: `ver:${ver}`,
+      label: ver,
+      tasks: byVer.get(ver)!,
+      kind: "version",
+    }));
+    if (noVer.length > 0) {
+      buckets.push({
+        key: "ver:__none__",
+        label: "버전 미지정",
+        tasks: noVer,
+        kind: "unversioned",
+      });
+    }
+    return {
+      expanded: [],
+      expandedLabel: "",
+      buckets,
+      hiddenCount: 0,
+    };
   }
 
   const currentMonth = getLocalMonthKey(now);
@@ -150,7 +189,7 @@ export function partitionDoneByMonth(doneTasks: Task[], mode: DoneDisplayMode, n
     }
   }
 
-  const buckets: MonthBucket[] = [...bucketMap.entries()]
+  const buckets: DoneBucket[] = [...bucketMap.entries()]
     .sort(([a], [b]) => {
       if (a === "unknown") return 1;
       if (b === "unknown") return -1;
@@ -160,6 +199,7 @@ export function partitionDoneByMonth(doneTasks: Task[], mode: DoneDisplayMode, n
       key: mode === "recent7" && mk === currentMonth ? `${mk}:older` : mk,
       label: mode === "recent7" && mk === currentMonth ? `${formatMonthLabel(mk)} (7일 이전)` : formatMonthLabel(mk),
       tasks,
+      kind: "month",
     }));
 
   return {

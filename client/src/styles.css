@@ -1775,7 +1775,28 @@ button.tile.fill-run.is-active {
   background: var(--card);
 }
 
-/* 완료 컬럼 월별 아코디언 묶음 */
+/* 완료 컬럼 버전별·월별 아코디언 묶음 */
+.done-mode-toggle {
+  padding: 2px 7px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--ink3);
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 1.4;
+  transition: border-color var(--quick) var(--ease), color var(--quick) var(--ease), background var(--quick) var(--ease);
+}
+.done-mode-toggle:hover {
+  border-color: var(--done);
+  color: var(--done-text);
+  background: var(--done-soft);
+}
+.done-mode-toggle.is-active {
+  border-color: var(--done);
+  color: var(--done-text);
+  background: var(--done-soft);
+}
 .done-subhead {
   display: flex;
   align-items: center;
@@ -1784,6 +1805,23 @@ button.tile.fill-run.is-active {
   font-size: 11px;
   font-weight: 600;
   color: var(--ink3);
+}
+.done-subhead-btn {
+  padding: 1px 5px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ink3);
+  font-size: 10.5px;
+  font-weight: 600;
+}
+.done-subhead-btn:hover {
+  color: var(--accent);
+  background: var(--subtle);
+}
+.month-bucket.is-version .month-bucket-label {
+  color: var(--ink);
+  font-weight: 700;
 }
 .done-empty-note {
   padding: 8px 6px;
